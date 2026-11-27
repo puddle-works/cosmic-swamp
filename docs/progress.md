@@ -58,7 +58,7 @@ Last updated: 2026-11-27.
 | Event sender | 2 | `deno test extensions/behaviors/allocation/event_sender_test.ts` |
 | Swamp store guard | 3 | `deno test extensions/behaviors/allocation/swamp_store_test.ts` |
 | App logic | 5 | `bun test` in `extensions/apps/stock` |
-| E2E race | 1 script | `scripts/concurrency_check.sh 10` |
+| E2E races (2) | 1 script | `scripts/concurrency_check.sh 10` |
 
 ## Outstanding
 

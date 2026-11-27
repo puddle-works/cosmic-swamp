@@ -48,7 +48,7 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | `scripts/send_order.sh` | Plays the external system: signs and posts one order to the webhook. |
 | `extensions/behaviors/allocation/event_sender.ts` | Signs and posts allocation events to another system. |
 | `receiver/` | Demo receiver for those events: checks signatures, drops repeats, lists them on a page. Its own Box deployment. |
-| `scripts/concurrency_check.sh` | Races N allocation processes against one batch. |
+| `scripts/concurrency_check.sh` | End-to-end races: allocate vs allocate, and change_batch_quantity vs allocate. Fails on a broken invariant. |
 | `manifest.yaml` | Extension package: behavior, workflow and app. |
 | `docs/` | ADRs, chapter mapping, platform gaps, progress. |
 
@@ -189,7 +189,7 @@ directory and lists them at `/`. Run it locally with
 ~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard, event sender (34)
 (cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (5)
 swamp workflow validate @puddleworks/place-order
-./scripts/concurrency_check.sh 10                           # end to end race, against the real datastore
+./scripts/concurrency_check.sh 10                           # end to end races, against the real datastore
 ```
 
 ## Install the package elsewhere
