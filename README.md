@@ -2,9 +2,13 @@
 
 The stock allocation service from *Architecture Patterns with Python*
 ([cosmicpython.com](https://www.cosmicpython.com)), rebuilt as Swamp-native
-software: one behavior type, one workflow and one Swamp App, with Swamp's
-datastore as the database and its per-behavior lock as the concurrency
-control. No web framework, database or broker.
+software: two behavior types, two workflows and one Swamp App, with Swamp's
+datastore as the database, its per-behavior lock as the concurrency control
+and its scheduler as the message bus. No web framework, database or broker.
+
+Published as [`@puddleworks/cosmic-swamp`](https://swamp-club.com/extensions/@puddleworks/cosmic-swamp)
+in the Swamp registry. [github.com/puddle-works/cosmic-swamp](https://github.com/puddle-works/cosmic-swamp)
+is a read-only mirror: issues and pull requests there are not watched.
 
 This is an independent implementation. No code from
 [cosmicpython/code](https://github.com/cosmicpython/code) (CC BY-ND) is copied;
