@@ -1,0 +1,24 @@
+id: af03ada5-dc0e-407e-a95e-31a0aa425acb
+name: '@puddleworks/dispatch-events'
+description: >-
+  The message bus's delivery side (ADR 0007): every minute, serve's scheduler
+  delivers the allocation events commands saved as data to STOCK_EVENTS_URL.
+tags: {}
+trigger:
+  schedule: "* * * * *"
+jobs:
+  - name: deliver
+    description: Deliver pending events, oldest first; the rest wait for the next run
+    steps:
+      - name: dispatch
+        description: Post each pending event and record its delivery
+        task:
+          type: model_method
+          modelIdOrName: notifier
+          methodName: dispatch
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

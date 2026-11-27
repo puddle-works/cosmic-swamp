@@ -43,6 +43,16 @@ Last updated: 2026-11-27.
       (none), release; a wrong secret and a receiver that is down are logged
       and the command still succeeds; a replayed event is stored once; a
       tampered body gets 401.
+- [x] Domain events and a message bus (book ch. 8), Swamp-native (ADR 0007):
+      `Product` raises `Allocated`/`Deallocated`/`OutOfStock`; out of stock
+      no longer fails the command. Events are saved as data in the
+      command's run, the `notifier` behavior's `dispatch` delivers them, and
+      `@puddleworks/dispatch-events` runs it every minute. Replaces the
+      best-effort sending from inside the method. Checked with the CLI
+      (receiver down, wrong secret, then up: all delivered once, in order,
+      nothing pending after) and under `swamp serve` with token sign-in
+      (webhook orders delivered by the scheduler on its own), and the app
+      shows the out-of-stock reason in a browser.
 - [x] Deployed to the Amp Box `mellens/cosmic-swamp` as `stock`
       (https://stock--mellens.onamp.dev/), running `swamp serve` with token
       sign-in. Checked from outside: sign-in page without a token; with it,
@@ -55,9 +65,9 @@ Last updated: 2026-11-27.
 | --- | --- | --- |
 | Domain | 19 | `deno test extensions/behaviors/allocation/domain_test.ts` |
 | Service | 10 | `deno test extensions/behaviors/allocation/service_test.ts` |
-| Event sender | 2 | `deno test extensions/behaviors/allocation/event_sender_test.ts` |
+| Notifier | 3 | `deno test extensions/behaviors/notifier/` |
 | Swamp store guard | 3 | `deno test extensions/behaviors/allocation/swamp_store_test.ts` |
-| App logic | 5 | `bun test` in `extensions/apps/stock` |
+| App logic | 6 | `bun test` in `extensions/apps/stock` |
 | E2E races (2) | 1 script | `scripts/concurrency_check.sh 10` |
 
 ## Outstanding

@@ -6,9 +6,8 @@
  * @module
  */
 
-import type { OrderLine, ProductState } from "./domain.ts";
+import type { DomainEvent, OrderLine, ProductState } from "./domain.ts";
 import {
-  type AllocationEvent,
   type AllocationStore,
   type AllocationView,
   ConcurrentUpdate,
@@ -21,7 +20,7 @@ export class InMemoryStore implements AllocationStore {
   products = new Map<string, Versioned<ProductState>>();
   lines = new Map<string, OrderLine>();
   allocations = new Map<string, AllocationView>();
-  events: AllocationEvent[] = [];
+  events: DomainEvent[] = [];
   productSaves = 0;
 
   getProduct(sku: string): Promise<Versioned<ProductState> | null> {
@@ -61,7 +60,8 @@ export class InMemoryStore implements AllocationStore {
     return Promise.resolve();
   }
 
-  recordEvent(event: AllocationEvent): void {
+  saveEvent(event: DomainEvent): Promise<void> {
     this.events.push(clone(event));
+    return Promise.resolve();
   }
 }

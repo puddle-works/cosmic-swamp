@@ -38,18 +38,25 @@ export class DomainError extends Error {
   }
 }
 
-/** No batch of the SKU has enough unallocated stock for the line. */
-export class OutOfStock extends DomainError {
-  constructor(
-    readonly sku: string,
-    readonly requested: number,
-    readonly available: number,
-  ) {
-    super(
-      `Insufficient stock for SKU ${sku}: requested ${requested}, largest available in any batch is ${available}`,
-    );
-  }
-}
+/**
+ * What happened to the stock (the book's chapter 8). The Product aggregate
+ * collects these in `events` as it changes; the service layer saves them as
+ * data, and the notifier behavior delivers them (ADR 0007).
+ *
+ * - `Allocated`: a line went into `batchref`, first time or moved there.
+ * - `Deallocated`: a line left `batchref` and is not allocated now.
+ * - `OutOfStock`: no batch could take the line; `available` is the most any
+ *   one batch had free.
+ */
+export type DomainEvent =
+  | { type: "Allocated" | "Deallocated"; batchref: string } & OrderLine
+  | { type: "OutOfStock"; available: number } & OrderLine;
+
+/** The message a person sees for an OutOfStock event. */
+export const outOfStockMessage = (
+  e: { sku: string; qty: number; available: number },
+) =>
+  `Insufficient stock for SKU ${e.sku}: requested ${e.qty}, largest available in any batch is ${e.available}`;
 
 /** The command names a batch reference that the product already holds. */
 export class DuplicateBatch extends DomainError {
@@ -193,6 +200,8 @@ export function allocationOrder(a: Batch, b: Batch): number {
 export class Product {
   readonly sku: string;
   readonly batches: Batch[];
+  /** Events raised since this object was built; not part of the stored state. */
+  readonly events: DomainEvent[] = [];
 
   constructor(sku: string, batches: Batch[] = []) {
     this.sku = sku;
@@ -221,33 +230,50 @@ export class Product {
     return this.batches.find((b) => b.holds(line));
   }
 
-  /**
-   * Allocates the line to the preferred batch that can take it and returns
-   * that batch's reference. A line that is already allocated keeps its batch.
-   */
-  allocate(line: OrderLine): string {
-    if (line.sku !== this.sku) throw new SkuMismatch(this.sku, line.sku);
-    const existing = this.allocationOf(line);
-    if (existing) return existing.reference;
+  /** Puts the line in the preferred batch that can take it, raising no event. */
+  #place(line: OrderLine): Batch | undefined {
     const batch = [...this.batches].sort(allocationOrder).find((b) =>
       b.canAllocate(line)
     );
+    batch?.allocate(line);
+    return batch;
+  }
+
+  /**
+   * Allocates the line to the preferred batch that can take it and returns
+   * that batch's reference, raising `Allocated`. A line that is already
+   * allocated keeps its batch and raises nothing. When no batch has room it
+   * raises `OutOfStock` and returns null: running out is something that
+   * happened, not a failure of the command (the book's chapter 8).
+   */
+  allocate(line: OrderLine): string | null {
+    if (line.sku !== this.sku) throw new SkuMismatch(this.sku, line.sku);
+    const existing = this.allocationOf(line);
+    if (existing) return existing.reference;
+    const batch = this.#place(line);
     if (!batch) {
       const available = Math.max(
         0,
         ...this.batches.map((b) => b.availableQuantity),
       );
-      throw new OutOfStock(this.sku, line.qty, available);
+      this.events.push({ type: "OutOfStock", ...line, available });
+      return null;
     }
-    batch.allocate(line);
+    this.events.push({ type: "Allocated", ...line, batchref: batch.reference });
     return batch.reference;
   }
 
   /** Releases the line from the batch holding it and returns that batch's reference, or null if it was not allocated. */
   deallocate(line: OrderLine): string | null {
     const batch = this.allocationOf(line);
-    batch?.deallocate(line);
-    return batch?.reference ?? null;
+    if (!batch) return null;
+    batch.deallocate(line);
+    this.events.push({
+      type: "Deallocated",
+      ...line,
+      batchref: batch.reference,
+    });
+    return batch.reference;
   }
 
   /**
@@ -256,18 +282,23 @@ export class Product {
    * the usual preference, which can include what is left of the same batch.
    * A line no batch has room for stays unallocated rather than failing the
    * change: the new quantity is a fact about the stock, not a request.
+   *
+   * Only lines that end up somewhere else raise events: `Allocated` for a
+   * line now in another batch, `Deallocated` (naming this batch) for one
+   * left unallocated. A line that went back into this batch did not move.
    */
   changeBatchQuantity(reference: string, qty: number): Reallocation[] {
     const batch = this.batches.find((b) => b.reference === reference);
     if (!batch) throw new UnknownBatch(this.sku, reference);
     const released = batch.changePurchasedQuantity(qty).reverse();
     return released.map((line) => {
-      try {
-        return { line, batchref: this.allocate(line) };
-      } catch (err) {
-        if (err instanceof OutOfStock) return { line, batchref: null };
-        throw err;
+      const batchref = this.#place(line)?.reference ?? null;
+      if (batchref === null) {
+        this.events.push({ type: "Deallocated", ...line, batchref: reference });
+      } else if (batchref !== reference) {
+        this.events.push({ type: "Allocated", ...line, batchref });
       }
+      return { line, batchref };
     });
   }
 

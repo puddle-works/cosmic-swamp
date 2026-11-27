@@ -20,6 +20,7 @@ import {
 import { type FormEvent, useEffect, useState } from "react";
 import {
   ALLOCATIONS_QUERY,
+  allocateOutcome,
   allocationRows,
   BEHAVIOR,
   batchInputs,
@@ -84,7 +85,7 @@ export function App() {
   const writable = !app.local;
 
   async function call(methodName: string, inputs: Record<string, unknown>) {
-    await method.run({ modelIdOrName: BEHAVIOR, methodName, inputs });
+    return await method.run({ modelIdOrName: BEHAVIOR, methodName, inputs });
   }
 
   async function submitBatch(e: FormEvent) {
@@ -107,8 +108,8 @@ export function App() {
     const { orderid, sku } = parsed.inputs;
     try {
       await call("create_order_line", parsed.inputs);
-      await call("allocate", { orderid, sku });
-      setMessage({ kind: "ok", text: `Allocated order ${orderid}` });
+      const run = await call("allocate", { orderid, sku });
+      setMessage(allocateOutcome(orderid, run.dataArtifacts));
       setOrder({ orderid: "", sku: "", qty: "" });
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
@@ -132,8 +133,8 @@ export function App() {
   async function toggleAllocation(a: { orderid: string; sku: string; batchref: string | null }) {
     const release = a.batchref !== null;
     try {
-      await call(release ? "deallocate" : "allocate", { orderid: a.orderid, sku: a.sku });
-      setMessage({ kind: "ok", text: release ? `Released order ${a.orderid}` : `Allocated order ${a.orderid}` });
+      const run = await call(release ? "deallocate" : "allocate", { orderid: a.orderid, sku: a.sku });
+      setMessage(release ? { kind: "ok", text: `Released order ${a.orderid}` } : allocateOutcome(a.orderid, run.dataArtifacts));
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
     }

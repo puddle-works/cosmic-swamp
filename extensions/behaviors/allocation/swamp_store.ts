@@ -5,6 +5,7 @@
  * - `product-<sku>`: the Product aggregate (spec `product`)
  * - `line-<orderid>-<sku>`: an order line (spec `orderLine`)
  * - `allocation-<orderid>-<sku>`: the allocation read model (spec `allocation`)
+ * - `event-<uuid>`: a domain event waiting for the notifier (spec `event`)
  *
  * Lost updates are refused twice over. Mutating methods of one behavior
  * instance run under its per-behavior lock, so two commands never interleave
@@ -17,10 +18,9 @@
  * @module
  */
 
-import type { OrderLine, ProductState } from "./domain.ts";
+import type { DomainEvent, OrderLine, ProductState } from "./domain.ts";
 import { Product } from "./domain.ts";
 import {
-  type AllocationEvent,
   type AllocationStore,
   type AllocationView,
   ConcurrentUpdate,
@@ -77,8 +77,6 @@ export function productRecord(state: ProductState): Record<string, unknown> {
 export class SwampStore implements AllocationStore {
   /** Every handle this command wrote, returned by the method so Swamp lists them. */
   readonly handles: DataHandleLike[] = [];
-  /** Events the command recorded, sent by the behavior after its writes. */
-  readonly events: AllocationEvent[] = [];
 
   constructor(private ctx: StoreContext) {}
 
@@ -160,8 +158,17 @@ export class SwampStore implements AllocationStore {
     });
   }
 
-  recordEvent(event: AllocationEvent): void {
-    this.events.push(event);
+  /**
+   * Writes the event as `event-<id>` (spec `event`). The id and time are
+   * fixed here, so a receiver that sees an event twice can drop the repeat.
+   */
+  async saveEvent(event: DomainEvent): Promise<void> {
+    const id = crypto.randomUUID();
+    await this.#write("event", `event-${id}`, {
+      id,
+      at: new Date().toISOString(),
+      ...event,
+    });
   }
 
   async saveAllocation(view: AllocationView): Promise<void> {

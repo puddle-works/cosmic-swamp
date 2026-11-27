@@ -2,7 +2,8 @@
 # End-to-end races against the real datastore, each command its own process.
 #
 # 1. allocate vs allocate: N lines of 3 race for one batch of 10, so exactly
-#    3 may succeed.
+#    3 may be allocated (the rest run out of stock, which is an event, not
+#    a failure: ADR 0007).
 # 2. change_batch_quantity vs allocate: N lines of 3 race for a warehouse
 #    batch of 10 and a shipment of 6 while both batches are shrunk (to 4 and
 #    3). Whatever the order, no batch may end over-allocated, the shrinks must
@@ -63,7 +64,7 @@ for i in $(seq 1 "$N"); do
   run allocate --input "orderid=r-$i" --input "sku=$SKU" >"$OUT/a-$i.out" 2>&1 & pids+=($!)
 done
 wait_all "${pids[@]}"
-echo "  succeeded=$ok refused=$refused"
+echo "  runs succeeded=$ok failed=$refused"
 P="$(product "$SKU")"; A="$(allocations "$SKU")"
 check "exactly 3 allocations" '[.product.batches[].allocations[]] | length == 3'
 check "no batch over-allocated" "$no_over_allocation"
@@ -86,7 +87,7 @@ for i in $(seq 1 "$N"); do
   fi
 done
 wait_all "${pids[@]}"
-echo "  succeeded=$ok refused=$refused (the 2 shrinks are among them)"
+echo "  runs succeeded=$ok failed=$refused (the 2 shrinks are among them)"
 P="$(product "$SKU")"; A="$(allocations "$SKU")"
 jq -c '{batches: [.batches[] | {ref: .reference, purchased: .purchasedQuantity, lines: [.allocations[].orderid]}]}' <<<"$P" | sed 's/^/  /'
 check "both shrinks stuck (wh 4, ship 3)" \

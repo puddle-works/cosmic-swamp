@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { OutOfStock, type ProductState } from "./domain.ts";
+import type { ProductState } from "./domain.ts";
 import { InMemoryStore } from "./memory_store.ts";
 import {
   addBatch,
@@ -50,7 +50,15 @@ Deno.test("allocating a recorded line returns and stores the allocation", async 
   assertEquals(store.products.get("FELT-HAT")!.value.batches[0].allocations, [
     { orderid: "o-1", sku: "FELT-HAT", qty: 4 },
   ]);
-  assertEquals(store.events, [{ type: "Allocated", ...view }]);
+  assertEquals(store.events, [
+    {
+      type: "Allocated",
+      orderid: "o-1",
+      sku: "FELT-HAT",
+      qty: 4,
+      batchref: "b-1",
+    },
+  ]);
 });
 
 Deno.test("an unknown SKU is refused when recording a line", async () => {
@@ -84,19 +92,26 @@ Deno.test("recording a line twice is idempotent, but a different quantity is ref
   assertEquals(store.lines.size, 1);
 });
 
-Deno.test("out of stock saves nothing", async () => {
+Deno.test("out of stock succeeds without touching the product: the line is unallocated and OutOfStock is saved", async () => {
   const store = new InMemoryStore();
   await addBatch({ ref: "b-1", sku: "FELT-HAT", qty: 3 }, store);
   await createOrderLine({ orderid: "o-1", sku: "FELT-HAT", qty: 4 }, store);
   const savesBefore = store.productSaves;
 
-  await assertRejects(
-    () => allocate({ orderid: "o-1", sku: "FELT-HAT" }, store),
-    OutOfStock,
-  );
+  const view = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
+
+  assertEquals(view.batchref, null);
   assertEquals(store.productSaves, savesBefore);
-  assertEquals(store.allocations.size, 0);
-  assertEquals(store.events, []);
+  assertEquals(store.allocations.get("o-1/FELT-HAT"), view);
+  assertEquals(store.events, [
+    {
+      type: "OutOfStock",
+      orderid: "o-1",
+      sku: "FELT-HAT",
+      qty: 4,
+      available: 3,
+    },
+  ]);
 });
 
 Deno.test("allocating an allocated line again does not save the product again", async () => {
@@ -130,10 +145,13 @@ Deno.test("deallocating releases the line, records it as unallocated, and it can
   await deallocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(store.products.get("FELT-HAT")!.version, version);
   // The event names the batch the line left; releasing it again says nothing.
-  assertEquals(store.events.map((e) => [e.type, e.batchref]), [
-    ["Allocated", "b-1"],
-    ["Deallocated", "b-1"],
-  ]);
+  assertEquals(
+    store.events.map((e) => [e.type, "batchref" in e && e.batchref]),
+    [
+      ["Allocated", "b-1"],
+      ["Deallocated", "b-1"],
+    ],
+  );
 
   const again = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(again.batchref, "b-1");

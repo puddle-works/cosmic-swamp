@@ -44,13 +44,15 @@ export function validSignature(body, header, key) {
 const escape = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+const PILL = { Allocated: "ok", Deallocated: "warn", OutOfStock: "alert" };
+
 function page(events) {
   const rows = events.slice().reverse().map((e) => `
       <tr>
         <td>${escape(e.receivedAt?.slice(0, 19).replace("T", " "))}</td>
-        <td><span class="pill ${e.type === "Allocated" ? "ok" : "warn"}">${escape(e.type)}</span></td>
+        <td><span class="pill ${PILL[e.type] ?? "muted"}">${escape(e.type)}</span></td>
         <td>${escape(e.orderid)}</td><td>${escape(e.sku)}</td>
-        <td class="num">${escape(e.qty)}</td><td>${escape(e.batchref)}</td>
+        <td class="num">${escape(e.qty)}</td><td>${e.type === "OutOfStock" ? `<span class="note">none free (largest ${escape(e.available)})</span>` : escape(e.batchref)}</td>
       </tr>`).join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -58,8 +60,8 @@ function page(events) {
 <meta http-equiv="refresh" content="10">
 <title>Stock events</title>
 <style>
-  :root { color-scheme: light dark; --bg:#f4f7f9; --surface:#fff; --text:#0f1219; --muted:#5f6879; --border:#d8dee6; --accent:#13707c; --accent-subtle:#e6f6f8; --danger:#b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1219; --surface:#1c2233; --text:#e8ecf1; --muted:#8a94aa; --border:#262d40; --accent:#5ec4d4; --accent-subtle:#15303a; --danger:#fca5a5; } }
+  :root { color-scheme: light dark; --bg:#f4f7f9; --surface:#fff; --text:#0f1219; --muted:#5f6879; --border:#d8dee6; --accent:#13707c; --accent-subtle:#e6f6f8; --danger:#b91c1c; --alert:#92400e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1219; --surface:#1c2233; --text:#e8ecf1; --muted:#8a94aa; --border:#262d40; --accent:#5ec4d4; --accent-subtle:#15303a; --danger:#fca5a5; --alert:#fcd34d; } }
   body { margin:0; padding:2rem; background:var(--bg); color:var(--text); font:15px/1.5 Inter, system-ui, sans-serif; }
   .brand { font-weight:600; font-size:1.1rem; } .brand b { color:var(--accent); }
   h1 { font-size:1.375rem; margin:.75rem 0 .25rem; } p { color:var(--muted); margin:0 0 1.25rem; }
@@ -68,12 +70,13 @@ function page(events) {
   th { font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); } .num { text-align:right; font-variant-numeric:tabular-nums; }
   .pill { padding:.1rem .55rem; border-radius:999px; font-size:.8rem; border:1px solid; }
   .ok { color:var(--accent); background:var(--accent-subtle); } .warn { color:var(--danger); background:color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+  .alert { color:var(--alert); background:color-mix(in srgb, var(--alert) 12%, var(--surface)); } .muted { color:var(--muted); } .note { color:var(--muted); }
   .empty { color:var(--muted); padding:1rem .5rem; }
 </style></head>
 <body>
   <div class="brand">puddle <b>works</b></div>
   <h1>Stock events</h1>
-  <p>A demo of another system receiving the Stock app's signed allocation events. ${events.length} received${secret ? "" : " · STOCK_EVENTS_SECRET is not set, so new events are refused"}. Refreshes every 10 s.</p>
+  <p>A demo of another system receiving the Stock app's signed allocation events, delivered by Swamp's scheduled dispatch (about once a minute). ${events.length} received${secret ? "" : " · STOCK_EVENTS_SECRET is not set, so new events are refused"}. Refreshes every 10 s.</p>
   <div class="card"><table>
     <thead><tr><th>Received (UTC)</th><th>Event</th><th>Order</th><th>SKU</th><th class="num">Qty</th><th>Batch</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="6" class="empty">No events yet.</td></tr>'}</tbody>

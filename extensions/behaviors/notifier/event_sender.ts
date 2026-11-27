@@ -1,16 +1,14 @@
 /**
- * Sends allocation events to another system over HTTP (the book's chapter 11,
- * events out). Swamp has no outbound event stream, so the behavior posts each
- * event itself once the command's writes are done.
- *
- * Each event is one POST of JSON, signed like the incoming order webhook:
- * `X-Puddleworks-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. The
- * `id` lets a receiver drop a repeat.
+ * Posts a stored event to another system over HTTP (the book's chapter 11,
+ * events out). Each event is one POST of JSON, signed like the incoming order
+ * webhook: `X-Puddleworks-Signature: sha256=<hex HMAC-SHA256 of the raw
+ * body>`. The event's `id` was fixed when it was saved, so a receiver can
+ * drop a repeat: delivery is at least once.
  *
  * @module
  */
 
-import type { AllocationEvent } from "./service.ts";
+import type { StoredEvent } from "./outbox.ts";
 
 export async function sign(body: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -33,14 +31,10 @@ export async function sign(body: string, secret: string): Promise<string> {
 export async function sendEvent(
   url: string,
   secret: string,
-  event: AllocationEvent,
+  event: StoredEvent,
   fetchFn: typeof fetch = fetch,
 ): Promise<void> {
-  const body = JSON.stringify({
-    id: crypto.randomUUID(),
-    at: new Date().toISOString(),
-    ...event,
-  });
+  const body = JSON.stringify(event);
   const response = await fetchFn(url, {
     method: "POST",
     headers: {

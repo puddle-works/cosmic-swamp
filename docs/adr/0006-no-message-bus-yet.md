@@ -1,6 +1,6 @@
 # ADR 0006: No in-process message bus, events or commands framework in the first slice
 
-Status: accepted (2026-11-27)
+Status: accepted (2026-11-27); the message bus part is superseded by ADR 0007
 
 ## Context
 
@@ -32,9 +32,7 @@ no external consumers.
   file, `webhook-routes/orders.yaml`, which runs `place-order` for each
   verified delivery. Still no bus: the webhook is just another caller of the
   same workflow.
-- External events out: done (2026-11-27) in the behavior rather than a
-  workflow step, so app clicks and quantity changes send events too, not only
-  `place-order`. Service functions record events on the store; the behavior
-  posts them after the command's writes. Still no bus: one in-process list
-  and one HTTP POST per event. Swamp has no outbound event stream
-  (`data.subscribe` is for app clients); see `docs/platform-gaps.md`.
+- External events out: first done (2026-11-27) by posting from inside the
+  allocation method, best effort. Replaced the same day by ADR 0007, where
+  Swamp itself is the bus: events are data, a notifier behavior delivers
+  them, and a scheduled workflow runs it.

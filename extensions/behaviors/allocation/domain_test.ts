@@ -2,7 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
   Batch,
   DuplicateBatch,
-  OutOfStock,
+  outOfStockMessage,
   Product,
   SkuMismatch,
   UnknownBatch,
@@ -101,14 +101,9 @@ Deno.test("lines are never split across batches: total stock is not enough on it
   product.addBatch("a", 6, null);
   product.addBatch("b", 6, TODAY);
 
-  const error = assertThrows(
-    () => product.allocate(line("o-1", "WOOL-RUG", 10)),
-    OutOfStock,
-  );
-  assertEquals([error.sku, error.requested, error.available], [
-    "WOOL-RUG",
-    10,
-    6,
+  assertEquals(product.allocate(line("o-1", "WOOL-RUG", 10)), null);
+  assertEquals(product.events, [
+    { type: "OutOfStock", ...line("o-1", "WOOL-RUG", 10), available: 6 },
   ]);
   assertEquals(product.availableQuantity, 12);
 });
@@ -118,18 +113,19 @@ Deno.test("out of stock once the only batch is used up, naming the SKU", () => {
   product.addBatch("b-1", 4, TODAY);
   product.allocate(line("o-1", "TIN-KETTLE", 4));
 
-  assertThrows(
-    () => product.allocate(line("o-2", "TIN-KETTLE", 1)),
-    OutOfStock,
-    "TIN-KETTLE",
+  assertEquals(product.allocate(line("o-2", "TIN-KETTLE", 1)), null);
+  const event = product.events.at(-1)!;
+  assertEquals(event.type, "OutOfStock");
+  assertEquals(
+    outOfStockMessage({ ...line("o-2", "TIN-KETTLE", 1), available: 0 }),
+    "Insufficient stock for SKU TIN-KETTLE: requested 1, largest available in any batch is 0",
   );
 });
 
 Deno.test("a product with no batches is out of stock", () => {
-  assertThrows(
-    () => new Product("TIN-KETTLE").allocate(line("o-1", "TIN-KETTLE", 1)),
-    OutOfStock,
-  );
+  const product = new Product("TIN-KETTLE");
+  assertEquals(product.allocate(line("o-1", "TIN-KETTLE", 1)), null);
+  assertEquals(product.events.map((e) => e.type), ["OutOfStock"]);
 });
 
 Deno.test("re-allocating an allocated line returns its batch and takes no more stock", () => {
@@ -157,7 +153,7 @@ Deno.test("product state round-trips with its allocations", () => {
   product.allocate(line("o-1", "TIN-KETTLE", 3));
   const copy = Product.fromState(JSON.parse(JSON.stringify(product.toState())));
   assertEquals(copy.toState(), product.toState());
-  assertThrows(() => copy.allocate(line("o-2", "TIN-KETTLE", 2)), OutOfStock);
+  assertEquals(copy.allocate(line("o-2", "TIN-KETTLE", 2)), null);
 });
 
 // --- Deallocation and batch quantity changes (chapter 9) -------------------

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { connectApp, createMockHost } from "@swamp-club/app-sdk";
-import { allocationRows, batchInputs, batchRows, orderInputs, PRODUCTS_QUERY, quantityInputs, totalsBySku } from "./stock.ts";
+import { allocateOutcome, allocationRows, batchInputs, batchRows, orderInputs, PRODUCTS_QUERY, quantityInputs, totalsBySku } from "./stock.ts";
 
 const product = {
   sku: "LAMP",
@@ -56,4 +56,17 @@ test("the products query is answered through a host granting data:read", async (
     data: { results: Array<{ content: unknown }> };
   };
   expect(batchRows(reply.data.results.map((r) => r.content))).toHaveLength(3);
+});
+
+test("an allocate run reports its batch, or the out-of-stock reason from its event", () => {
+  expect(allocateOutcome("o-1", [{ name: "allocation-o-1-LAMP", attributes: { orderid: "o-1", batchref: "wh" } }])).toEqual({
+    kind: "ok",
+    text: "Allocated order o-1 to wh",
+  });
+  const outOfStock = allocateOutcome("o-2", [
+    { name: "allocation-o-2-LAMP", attributes: { orderid: "o-2", batchref: null } },
+    { name: "event-x", attributes: { type: "OutOfStock", sku: "LAMP", qty: 50, available: 10 } },
+  ]);
+  expect(outOfStock.kind).toBe("error");
+  expect(outOfStock.text).toContain("requested 50, largest available in any batch is 10");
 });

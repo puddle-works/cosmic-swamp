@@ -17,7 +17,8 @@ the book's domain rules and test scenarios are the functional specification.
 - Record an order line, then allocate it to the preferred batch: warehouse
   stock first, then the earliest shipment. A line is never split across batches.
 - View allocations and remaining stock.
-- Get `Insufficient stock for SKU …` when no batch can take the line.
+- Get `Insufficient stock for SKU …` when no batch can take the line: the
+  line stays unallocated and an `OutOfStock` event is raised.
 - Release (deallocate) an order line, and allocate it again later.
 - Change a batch's quantity, for example after damage or a short delivery.
   Lines the batch can no longer cover are released, newest first, and
@@ -25,9 +26,10 @@ the book's domain rules and test scenarios are the functional specification.
   as unallocated.
 - Take orders from another system: a signed `POST /hooks/orders` with
   `{"orderid", "sku", "qty"}` runs the same `place-order` workflow.
-- Tell another system when a line is allocated, moves batch or is released:
-  each change is POSTed, signed, to `STOCK_EVENTS_URL`. `receiver/` is a demo
-  receiver that shows them.
+- Tell another system when a line is allocated, moves batch, is released or
+  runs out of stock: each change is saved as an event and delivered, signed,
+  to `STOCK_EVENTS_URL` within about a minute. `receiver/` is a demo receiver
+  that shows them.
 
 State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 `swamp serve` restarts and machine restarts.
@@ -46,10 +48,12 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | `extensions/apps/stock/` | The `@puddleworks/stock` Swamp App. |
 | `webhook-routes/orders.yaml` | The `/hooks/orders` webhook: verified deliveries run `place-order`. |
 | `scripts/send_order.sh` | Plays the external system: signs and posts one order to the webhook. |
-| `extensions/behaviors/allocation/event_sender.ts` | Signs and posts allocation events to another system. |
+| `extensions/behaviors/notifier/` | The `@puddleworks/notifier` behavior: `dispatch` delivers pending events and records each delivery (ADR 0007). |
+| `models/@puddleworks/notifier/notifier.yaml` | The `notifier` behavior definition. |
+| `workflows/workflow-af03ada5-….yaml` | `@puddleworks/dispatch-events`: runs `dispatch` every minute on serve's scheduler. |
 | `receiver/` | Demo receiver for those events: checks signatures, drops repeats, lists them on a page. Its own Box deployment. |
 | `scripts/concurrency_check.sh` | End-to-end races: allocate vs allocate, and change_batch_quantity vs allocate. Fails on a broken invariant. |
-| `manifest.yaml` | Extension package: behavior, workflow and app. |
+| `manifest.yaml` | Extension package: behaviors, workflows and app. |
 | `docs/` | ADRs, chapter mapping, platform gaps, progress. |
 
 ## Run it locally
@@ -133,9 +137,10 @@ route. The body is `{"orderid": "...", "sku": "...", "qty": N}`, signed as
 shared secret. A bad signature gets 401 and nothing runs. A verified delivery
 gets 200 `{"status":"queued"}` straight away, and Swamp then runs
 `@puddleworks/place-order` with the body's fields as its inputs (the
-workflow's `trigger.inputs`). The sender does not hear the outcome: an order
-that is out of stock, or a body missing a field, fails as a run, visible in
-serve's log and the dashboard's run history.
+workflow's `trigger.inputs`). The sender does not hear the outcome directly:
+a body missing a field fails as a run, visible in serve's log and run history,
+and an order that is out of stock is recorded as unallocated and raises an
+`OutOfStock` event, which the event receiver sees.
 
 The secret is created on first start, in the `default` vault, by
 `.agents/setup` (orb) or `scripts/box-serve.sh` (Box). To send an order:
@@ -154,28 +159,33 @@ The webhook needs no serve token: the signature is its credential, and its
 runs act as Swamp's built-in `service:webhook` principal, which may run
 workflows by default.
 
-## Events to other systems
+## Events to other systems (Swamp as the message bus)
 
-When `STOCK_EVENTS_URL` and `STOCK_EVENTS_SECRET` are set in serve's (or the
-CLI's) environment, every command that changes an allocation POSTs one JSON
-event per change after its writes:
+ADR 0007 has the reasoning. In short:
+
+1. `Product` raises domain events as it changes: `Allocated` (a line went
+   into, or moved to, `batchref`), `Deallocated` (a line left `batchref` and
+   is unallocated now) and `OutOfStock` (no batch could take the line;
+   `available` is the most any batch had free). A line that goes back into
+   the batch it came from, and a repeat allocation, raise nothing.
+2. Each command saves its events as `event-<uuid>` data of the `stock`
+   behavior, in the same run as the change, so they commit or roll back
+   together. They expire after 30 days.
+3. The `@puddleworks/dispatch-events` workflow runs `notifier`'s `dispatch`
+   every minute on serve's scheduler. It posts each undelivered event, oldest
+   first, to `STOCK_EVENTS_URL` and records a `delivery-<event id>`; it stops
+   at the first failure, and the rest are retried on the next run.
 
 ```json
 {"id": "<uuid>", "at": "<ISO time>", "type": "Allocated", "orderid": "o-1", "sku": "LAMP", "qty": 2, "batchref": "wh"}
+{"id": "<uuid>", "at": "<ISO time>", "type": "OutOfStock", "orderid": "o-2", "sku": "LAMP", "qty": 50, "available": 10}
 ```
 
-- `Allocated`: a line was allocated, or moved to another batch by
-  `change_batch_quantity`.
-- `Deallocated`: a line was released, or a shrunk batch could not keep it and
-  no other batch had room; `batchref` is the batch it left.
-- A line that goes back into the batch it came from, and a repeat
-  allocation, send nothing.
-
 Each POST is signed as `X-Puddleworks-Signature: sha256=<hex HMAC-SHA256 of
-the raw body>`, like incoming orders. Sending is best effort: the command's
-writes stand if the receiver is down or refuses, and the failure is logged
-(`Could not send …`), not retried. There is no outbox, so a receiver that
-must not miss events should reconcile against the `allocation` data.
+the raw body>` with `STOCK_EVENTS_SECRET`, like incoming orders. Delivery is
+at least once: receivers drop repeats by `id`. Without `STOCK_EVENTS_URL`
+and `STOCK_EVENTS_SECRET` in serve's environment, `dispatch` delivers nothing
+and events wait. To deliver by hand: `swamp behavior run notifier dispatch`.
 
 `receiver/` is the other side for the demo: a Node server with no
 dependencies (`receiver/server.mjs`) that checks the signature with the same
@@ -186,8 +196,9 @@ directory and lists them at `/`. Run it locally with
 ## Tests
 
 ```sh
-~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard, event sender (34)
-(cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (5)
+~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (32)
+~/.swamp/deno/deno test extensions/behaviors/notifier/     # event sender, outbox (3)
+(cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (6)
 swamp workflow validate @puddleworks/place-order
 ./scripts/concurrency_check.sh 10                           # end to end races, against the real datastore
 ```

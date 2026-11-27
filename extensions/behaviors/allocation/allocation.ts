@@ -11,7 +11,6 @@
 
 import { z } from "npm:zod@4";
 import * as service from "./service.ts";
-import { sendEvent } from "./event_sender.ts";
 import { type StoreContext, SwampStore } from "./swamp_store.ts";
 
 /** Identifiers become part of resource names, so keep them portable. */
@@ -82,41 +81,19 @@ const BatchSchema = z.object({
 type Log = (msg: string, properties?: Record<string, unknown>) => void;
 type Context = StoreContext & { logger: { info: Log; warn: Log } };
 
-/**
- * Runs a service command against the datastore, then sends the events it
- * recorded to STOCK_EVENTS_URL, signed with STOCK_EVENTS_SECRET, when set.
- * Sending is best effort: the command's writes stand even when the receiver
- * is down, and a failed send is logged, not retried (there is no outbox).
- */
+/** Runs a service command against the datastore and returns what it wrote. */
 async function run<T>(
   context: Context,
   command: (store: SwampStore) => Promise<T>,
 ) {
   const store = new SwampStore(context);
   const result = await command(store);
-  const url = Deno.env.get("STOCK_EVENTS_URL");
-  const secret = Deno.env.get("STOCK_EVENTS_SECRET");
-  for (const event of url ? store.events : []) {
-    if (!secret) {
-      context.logger.warn("STOCK_EVENTS_SECRET is not set; events not sent");
-      break;
-    }
-    try {
-      await sendEvent(url!, secret, event);
-      context.logger.info("Sent {type} for {orderid} ({batchref})", event);
-    } catch (err) {
-      context.logger.warn("Could not send {type} for {orderid}: {error}", {
-        ...event,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
   return { result, dataHandles: store.handles };
 }
 
 export const behavior = {
   type: "@puddleworks/allocation",
-  version: "2026.11.27.3",
+  version: "2026.11.28.1",
   globalArguments: z.object({}),
   resources: {
     product: {
@@ -142,6 +119,19 @@ export const behavior = {
       schema: OrderLineSchema.extend({ batchref: z.string().nullable() }),
       lifetime: "infinite",
       garbageCollection: 5,
+    },
+    event: {
+      description:
+        "Domain event (Allocated, Deallocated, OutOfStock) waiting for the notifier behavior to deliver it; see ADR 0007",
+      schema: OrderLineSchema.extend({
+        id: z.string(),
+        at: z.string(),
+        type: z.enum(["Allocated", "Deallocated", "OutOfStock"]),
+        batchref: z.string().optional(),
+        available: z.number().optional(),
+      }),
+      lifetime: "30d",
+      garbageCollection: 1,
     },
   },
   methods: {
@@ -180,7 +170,7 @@ export const behavior = {
     },
     allocate: {
       description:
-        "Allocate a recorded order line to the preferred batch; fails when stock is insufficient",
+        "Allocate a recorded order line to the preferred batch; when no batch has room the line stays unallocated and an OutOfStock event is saved",
       kind: "update",
       rollbackOnFailure: true,
       arguments: AllocateArgs,
@@ -190,9 +180,16 @@ export const behavior = {
           context,
           (store) => service.allocate(cmd, store),
         );
-        context.logger.info("Allocated {orderid} to batch {batchref}", {
-          ...result,
-        });
+        if (result.batchref === null) {
+          context.logger.warn(
+            "Out of stock: {orderid} ({qty} x {sku}) stays unallocated",
+            { ...result },
+          );
+        } else {
+          context.logger.info("Allocated {orderid} to batch {batchref}", {
+            ...result,
+          });
+        }
         return { dataHandles };
       },
     },

@@ -89,12 +89,14 @@ says what was needed, what was done instead, and what would help.
     run id to poll, would let the book's request/response style work over a
     webhook.
 
-16. **No outbox, and no hook after a method's writes are committed.** The
-    behavior sends events at the end of its method, before Swamp has
-    finished recording the run, and does not retry. A failed send is lost
-    (logged only), and a send could in principle announce a change whose
-    commit then fails. An "after commit" hook, or a durable outbox Swamp
-    drains, would make events out reliable.
+16. **No message bus for extensions, and no "on data change" trigger.**
+    Swamp emits internal domain events, but nothing handles them and
+    extensions cannot subscribe. ADR 0007 builds the bus from parts: events
+    saved as data (an outbox), a notifier behavior, and a workflow polling
+    it every minute on the scheduler. A workflow trigger that fires when a
+    behavior writes data of a given spec would remove the polling and the
+    minute of latency; `data.subscribe` gets close but needs a v3 datastore
+    and a client to follow it.
 
 ## Reusable extension candidates
 

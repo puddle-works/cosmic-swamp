@@ -112,3 +112,25 @@ export function quantityInputs(form: { ref: string; sku: string; qty: string }):
   }
   return { inputs: { ref: form.ref.trim(), sku: form.sku.trim(), qty } };
 }
+
+/**
+ * What an `allocate` run did, read from the data it wrote: the allocation
+ * record, and an OutOfStock event when no batch had room. Allocation no
+ * longer fails for lack of stock (ADR 0007), so the app must look.
+ */
+export function allocateOutcome(
+  orderid: string,
+  artifacts: ReadonlyArray<{ name: string; attributes?: Record<string, unknown> }>,
+): { kind: "ok" | "error"; text: string } {
+  const allocation = artifacts.find((a) => a.name.startsWith("allocation-"))?.attributes;
+  const batchref = str(allocation?.batchref);
+  if (batchref) return { kind: "ok", text: `Allocated order ${orderid} to ${batchref}` };
+  const event = artifacts.map((a) => a.attributes).find((a) => a?.type === "OutOfStock");
+  if (event) {
+    return {
+      kind: "error",
+      text: `Insufficient stock for SKU ${str(event.sku)}: requested ${num(event.qty)}, largest available in any batch is ${num(event.available)}. Order ${orderid} is unallocated.`,
+    };
+  }
+  return { kind: "error", text: `Order ${orderid} is not allocated` };
+}
