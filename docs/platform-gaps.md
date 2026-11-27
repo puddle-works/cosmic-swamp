@@ -82,6 +82,13 @@ says what was needed, what was done instead, and what would help.
     `--cert-file`/`--key-file`, so serve binds to 127.0.0.1 behind the Box's
     router, which terminates TLS.
 
+15. **A webhook sender never learns the outcome.** Serve answers a verified
+    delivery with `200 {"status":"queued"}` before the workflow runs, and
+    returns no run id. An order that fails (out of stock, a missing field)
+    is visible only in serve's log and run history. A synchronous mode, or a
+    run id to poll, would let the book's request/response style work over a
+    webhook.
+
 ## Reusable extension candidates
 
 - **`@puddleworks/aggregate-store`**: a small library behaviors import to load

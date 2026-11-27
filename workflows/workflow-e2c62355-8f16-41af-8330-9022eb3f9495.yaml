@@ -2,6 +2,13 @@ id: e2c62355-8f16-41af-8330-9022eb3f9495
 name: '@puddleworks/place-order'
 description: Record an order line and allocate it to the preferred batch in one run
 tags: {}
+# Webhook deliveries (webhook-routes/orders.yaml) have no --input; their JSON
+# body {"orderid", "sku", "qty"} becomes the inputs. Manual runs ignore this.
+trigger:
+  inputs:
+    orderid: ${{ webhook.body.orderid }}
+    sku: ${{ webhook.body.sku }}
+    qty: ${{ webhook.body.qty }}
 inputs:
   type: object
   properties:

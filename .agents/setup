@@ -31,4 +31,12 @@ fi
 # app.yaml asks for more, approval falls back to review and this re-approves
 # only what app.yaml declares, so review app.yaml changes before merging.
 swamp app approve @puddleworks/stock --yes >/dev/null
+
+# The shared secret for webhook-routes/orders.yaml. Made once, kept in the
+# vault (.swamp/secrets); read it with
+#   swamp vault read-secret default orders-webhook-secret --yes
+if ! swamp vault list-keys default --json | grep -q '"orders-webhook-secret"'; then
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' |
+    swamp vault put default orders-webhook-secret >/dev/null
+fi
 swamp app list | head -1

@@ -31,6 +31,10 @@ Last updated: 2026-11-27.
       datastore and in a browser under `swamp serve`.
 - [x] Fixed the behavior's log lines, which printed blank: Swamp's logger
       takes named values as an object, not as extra arguments.
+- [x] External orders in (book ch. 11): `POST /hooks/orders`, HMAC-signed,
+      runs `place-order`; `scripts/send_order.sh` plays the sender. Checked
+      under `swamp serve` with token sign-in: a signed order is allocated, a bad
+      signature gets 401, an out-of-stock order fails as a run.
 - [x] Deployed to the Amp Box `mellens/cosmic-swamp` as `stock`
       (https://stock--mellens.onamp.dev/), running `swamp serve` with token
       sign-in. Checked from outside: sign-in page without a token; with it,
@@ -51,11 +55,9 @@ Last updated: 2026-11-27.
 
 - Registry publication (`swamp extension push`). Not done; it is a public,
   external action that needs a decision.
-- Grants for viewers under `swamp serve --auth-mode token|oauth`. Token mode
-  is exercised on the Box with one admin token (`owner`); there is no
-  read-only principal yet.
 - Per-SKU sharding (ADR 0004) if throughput matters.
-- External events in and out (book ch. 11).
+- External events out (book ch. 11), for example "allocated" to another
+  system. Needs a method that calls it, since Swamp has no outbound stream.
 
 ## Swamp limitations discovered
 

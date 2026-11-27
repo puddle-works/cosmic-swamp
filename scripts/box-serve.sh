@@ -15,7 +15,7 @@ export PATH="$release/bin:$PATH"
 # .swamp/, so serve runs from a copy in the data directory. Each start
 # refreshes the code and keeps .swamp/ (stock, orders, tokens, approvals).
 mkdir -p "$repo" "$SWAMP_HOME"
-for item in .swamp.yaml manifest.yaml extensions models workflows vaults; do
+for item in .swamp.yaml manifest.yaml extensions models workflows vaults webhook-routes; do
   rm -rf "${repo:?}/$item"
   cp -R "$release/$item" "$repo/$item"
 done
@@ -24,6 +24,14 @@ cd "$repo"
 
 # Same approval as .agents/setup: exactly what app.yaml declares.
 swamp app approve @puddleworks/stock --yes >/dev/null
+
+# The shared secret for webhook-routes/orders.yaml. Made once, kept in the
+# vault (.swamp/secrets); read it with
+#   amp boxes exec ... --as-app '... bin/swamp vault read-secret default orders-webhook-secret --yes ...' (see README)
+if ! swamp vault list-keys default --json | grep -q '"orders-webhook-secret"'; then
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' |
+    swamp vault put default orders-webhook-secret >/dev/null
+fi
 
 # The sign-in token is named "owner". Read it with:
 #   amp boxes exec <box> --deployment <name> --as-app \

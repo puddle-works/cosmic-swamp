@@ -28,8 +28,10 @@ no external consumers.
   under the lock: the book's `AllocationRequired` events become a loop in
   `Product.changeBatchQuantity`. A workflow with steps is the alternative if
   the steps ever need to be visible or resumable.
-- External events in (chapter 11): `swamp serve --webhook` triggers a
-  workflow, or `wait_for_signal` steps take JSON messages.
+- External events in (chapter 11): done (2026-11-27) as a webhook route
+  file, `webhook-routes/orders.yaml`, which runs `place-order` for each
+  verified delivery. Still no bus: the webhook is just another caller of the
+  same workflow.
 - External events out: a behavior method that calls the outside system, run as
   a later workflow step. Swamp has no outbound event stream for this
   (`data.subscribe` is for app clients); see `docs/platform-gaps.md`.

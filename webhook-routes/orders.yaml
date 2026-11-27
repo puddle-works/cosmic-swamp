@@ -1,0 +1,12 @@
+# External orders in (Cosmic Python chapter 11): another system POSTs
+# {"orderid": "...", "sku": "...", "qty": N} to /hooks/orders, signed with
+# HMAC-SHA256 of the raw body under the shared secret, as
+# "X-Puddleworks-Signature: sha256=<hex>". scripts/send_order.sh does that.
+# Each verified delivery runs @puddleworks/place-order as service:webhook.
+route: /hooks/orders
+workflow: "@puddleworks/place-order"
+# Created on first start by .agents/setup or scripts/box-serve.sh.
+secret: "@vault=default:orders-webhook-secret"
+scheme: generic
+header: X-Puddleworks-Signature
+prefix: "sha256="

@@ -23,6 +23,8 @@ the book's domain rules and test scenarios are the functional specification.
   Lines the batch can no longer cover are released, newest first, and
   reallocated by the usual preference; a line no batch has room for is shown
   as unallocated.
+- Take orders from another system: a signed `POST /hooks/orders` with
+  `{"orderid", "sku", "qty"}` runs the same `place-order` workflow.
 
 State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 `swamp serve` restarts and machine restarts.
@@ -39,6 +41,8 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | `models/@puddleworks/allocation/stock.yaml` | The `stock` behavior definition the CLI, workflow and app use. |
 | `workflows/workflow-e2c62355-….yaml` | `@puddleworks/place-order`: record a line, then allocate it. |
 | `extensions/apps/stock/` | The `@puddleworks/stock` Swamp App. |
+| `webhook-routes/orders.yaml` | The `/hooks/orders` webhook: verified deliveries run `place-order`. |
+| `scripts/send_order.sh` | Plays the external system: signs and posts one order to the webhook. |
 | `scripts/concurrency_check.sh` | Races N allocation processes against one batch. |
 | `manifest.yaml` | Extension package: behavior, workflow and app. |
 | `docs/` | ADRs, chapter mapping, platform gaps, progress. |
@@ -115,6 +119,34 @@ The deployment needs `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` as deployment
 secrets (a swamp-club collective token and its sign-in token). Stock data,
 tokens and the app's approval live in the deployment's data directory and
 survive redeploys. Redeploy pushed code with `amp boxes deploy`.
+
+## Orders from other systems (webhook)
+
+`webhook-routes/orders.yaml` gives `swamp serve` a `POST /hooks/orders`
+route. The body is `{"orderid": "...", "sku": "...", "qty": N}`, signed as
+`X-Puddleworks-Signature: sha256=<HMAC-SHA256 of the raw body, hex>` with a
+shared secret. A bad signature gets 401 and nothing runs. A verified delivery
+gets 200 `{"status":"queued"}` straight away, and Swamp then runs
+`@puddleworks/place-order` with the body's fields as its inputs (the
+workflow's `trigger.inputs`). The sender does not hear the outcome: an order
+that is out of stock, or a body missing a field, fails as a run, visible in
+serve's log and the dashboard's run history.
+
+The secret is created on first start, in the `default` vault, by
+`.agents/setup` (orb) or `scripts/box-serve.sh` (Box). To send an order:
+
+```sh
+export ORDERS_WEBHOOK_SECRET="$(swamp vault read-secret default orders-webhook-secret --yes)"
+scripts/send_order.sh http://127.0.0.1:9090 o-42 RED-CHAIR 2
+
+# On the Box
+export ORDERS_WEBHOOK_SECRET="$(amp boxes exec mellens/cosmic-swamp --deployment stock --as-app 'SWAMP_HOME="$AMP_DEPLOYMENT_DATA_DIRECTORY/swamp-home" bin/swamp vault read-secret default orders-webhook-secret --yes --repo-dir "$AMP_DEPLOYMENT_DATA_DIRECTORY/repo"')"
+scripts/send_order.sh https://stock--mellens.onamp.dev o-42 RED-CHAIR 2
+```
+
+The webhook needs no serve token: the signature is its credential, and its
+runs act as Swamp's built-in `service:webhook` principal, which may run
+workflows by default.
 
 ## Tests
 

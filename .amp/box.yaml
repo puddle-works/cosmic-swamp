@@ -13,6 +13,7 @@ artifacts:
   - models
   - workflows
   - vaults
+  - webhook-routes
 services:
   serve:
     command: scripts/box-serve.sh
