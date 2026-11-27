@@ -140,7 +140,8 @@ export ORDERS_WEBHOOK_SECRET="$(swamp vault read-secret default orders-webhook-s
 scripts/send_order.sh http://127.0.0.1:9090 o-42 RED-CHAIR 2
 
 # On the Box
-export ORDERS_WEBHOOK_SECRET="$(amp boxes exec mellens/cosmic-swamp --deployment stock --as-app 'SWAMP_HOME="$AMP_DEPLOYMENT_DATA_DIRECTORY/swamp-home" bin/swamp vault read-secret default orders-webhook-secret --yes --repo-dir "$AMP_DEPLOYMENT_DATA_DIRECTORY/repo"')"
+# (amp boxes exec mixes log lines into its output, so keep only the secret)
+export ORDERS_WEBHOOK_SECRET="$(amp boxes exec mellens/cosmic-swamp --deployment stock --as-app 'SWAMP_HOME="$AMP_DEPLOYMENT_DATA_DIRECTORY/swamp-home" bin/swamp vault read-secret default orders-webhook-secret --yes --repo-dir "$AMP_DEPLOYMENT_DATA_DIRECTORY/repo" 2>/dev/null' | grep -oE '[0-9a-f]{64}' | tail -1)"
 scripts/send_order.sh https://stock--mellens.onamp.dev o-42 RED-CHAIR 2
 ```
 

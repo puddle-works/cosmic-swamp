@@ -33,7 +33,7 @@ Last updated: 2026-11-27.
       takes named values as an object, not as extra arguments.
 - [x] External orders in (book ch. 11): `POST /hooks/orders`, HMAC-signed,
       runs `place-order`; `scripts/send_order.sh` plays the sender. Checked
-      under `swamp serve` with token sign-in: a signed order is allocated, a bad
+      under `swamp serve` with token sign-in and on the Box: a signed order is allocated, a bad
       signature gets 401, an out-of-stock order fails as a run.
 - [x] Deployed to the Amp Box `mellens/cosmic-swamp` as `stock`
       (https://stock--mellens.onamp.dev/), running `swamp serve` with token
