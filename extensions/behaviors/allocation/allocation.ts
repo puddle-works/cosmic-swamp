@@ -91,6 +91,7 @@ async function run<T>(
   return { result, dataHandles: store.handles };
 }
 
+/** The `@puddleworks/allocation` behavior type: one method per service-layer command. */
 export const behavior = {
   type: "@puddleworks/allocation",
   version: "2026.11.28.1",
@@ -164,6 +165,10 @@ export const behavior = {
         const { dataHandles } = await run(
           context,
           (store) => service.createOrderLine(line, store),
+        );
+        context.logger.info(
+          "Recorded order line {orderid}: {qty} x {sku}",
+          line,
         );
         return { dataHandles };
       },

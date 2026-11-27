@@ -98,6 +98,15 @@ says what was needed, what was done instead, and what would help.
     minute of latency; `data.subscribe` gets close but needs a v3 datastore
     and a client to follow it.
 
+17. **A recorded extension review goes stale when push adds flags.** The
+    adversarial review report is bound to a content hash that includes
+    `--release-notes` and `--visibility`. A review recorded after a plain
+    `push --dry-run` therefore did not match the real push, and
+    `2026.11.28.1` was published as "no adversarial review recorded". Run the
+    dry run with the same flags as the push; `2026.11.28.2` carries the
+    review. Also, `swamp extension version` suggested `2026.11.27.1` (today's
+    date), which is lower than the published `2026.11.28.1`.
+
 ## Reusable extension candidates
 
 - **`@puddleworks/aggregate-store`**: a small library behaviors import to load

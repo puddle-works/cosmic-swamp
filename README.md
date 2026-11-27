@@ -196,8 +196,8 @@ directory and lists them at `/`. Run it locally with
 ## Tests
 
 ```sh
-~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (32)
-~/.swamp/deno/deno test extensions/behaviors/notifier/     # event sender, outbox (3)
+~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard, methods (35)
+~/.swamp/deno/deno test --allow-env extensions/behaviors/notifier/   # event sender, outbox, dispatch (5)
 (cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (6)
 swamp workflow validate @puddleworks/place-order
 ./scripts/concurrency_check.sh 10                           # end to end races, against the real datastore

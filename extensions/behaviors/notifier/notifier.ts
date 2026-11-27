@@ -42,6 +42,7 @@ interface Context {
 const attributesOf = (rows: unknown[]) =>
   rows.map((r) => (r as { attributes?: unknown }).attributes);
 
+/** The `@puddleworks/notifier` behavior type: `dispatch` delivers pending allocation events. */
 export const behavior = {
   type: "@puddleworks/notifier",
   version: "2026.11.28.1",

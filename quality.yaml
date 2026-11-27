@@ -1,0 +1,4 @@
+version: 1
+accept:
+  - rule: behavior-spelling
+    reason: built for and tested on swamp 20261127.024011.0, which reads the behavior spelling
