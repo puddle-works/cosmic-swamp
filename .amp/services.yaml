@@ -1,17 +1,18 @@
 services:
   swamp-serve:
-    # The Swamp dashboard and the Stock app. --trusted-hosts lets the portal's
-    # browser origin through serve's origin check; without it the dashboard
-    # sits at "starting" because its WebSocket is refused.
+    # The Swamp dashboard and the Stock app, for development in the orb.
+    # --trusted-hosts lets the portal's browser origin through serve's origin
+    # check; without it the dashboard sits at "starting" because its WebSocket
+    # is refused.
     command: >-
       export PATH="$HOME/.local/bin:$PATH" &&
       swamp serve --dashboard --port "$PORT"
       --trusted-hosts "$(printf '%s' "$PUBLIC_URL" | sed -E 's#^https?://([^/]+).*#\1#')"
     health: /ready
+    # Only the dashboard works through the portal. The Stock app's sandboxed
+    # frame loads its files without cookies, which the portal's sign-in
+    # redirects (docs/platform-gaps.md, gap 12); use the Box deployment.
     portal:
-      url: /apps/@puddleworks/stock
-      title: Stock app
-      description: Puddle Works stock allocation. The Swamp dashboard is at /dashboard.
-    portals:
-      - url: /dashboard
-        title: Swamp dashboard
+      url: /dashboard
+      title: Swamp dashboard
+      description: The Stock app does not load through the portal; open it at https://stock--mellens.onamp.dev/apps/@puddleworks/stock

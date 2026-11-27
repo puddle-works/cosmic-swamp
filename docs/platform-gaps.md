@@ -60,11 +60,27 @@ says what was needed, what was done instead, and what would help.
 
 12. **Swamp apps do not work behind a cookie-authenticated proxy.** An app
     runs in a sandboxed frame with an opaque origin, so its scripts, styles,
-    fonts and `/app-platform/` modules are fetched without cookies. Behind
-    Amp's portal sign-in each of those requests is redirected to the sign-in
-    page, and the frame stays blank while the dashboard around it works.
-    Swamp apps need a proxy that authenticates with something other than a
-    cookie, or a public route, or loopback.
+    fonts and `/app-platform/` modules are fetched without cookies (Swamp's
+    design: `design/surfaces/apps.md`, "Serving"). Behind Amp's portal
+    sign-in, or an Amp Box deployment made `--private`, each of those
+    requests is redirected to the sign-in page, and the frame stays blank
+    while the dashboard around it works. What works: loopback, or a public
+    route with serve's own sign-in (`--auth-mode token` or `oauth`), where
+    the frame's files are authorised by their signed launch token instead.
+    The Box deployment uses token mode for this reason.
+
+13. **Every swamp process needs a swamp-club credential, servers included.**
+    `swamp serve` on the Box will not start without `SWAMP_API_KEY` (and
+    `SWAMP_SIGNIN_TOKEN` for daemons), even with a local datastore and no
+    registry use. Both are deployment secrets; the sign-in token is shown
+    only once when the collective token is created.
+
+14. **Serve keeps runtime data inside the repo, and needs TLS off loopback.**
+    `.swamp/` must be writable, so on a read-only release (the Box)
+    `scripts/box-serve.sh` copies the code into the data directory and runs
+    serve there. Token mode also refuses a non-loopback bind without
+    `--cert-file`/`--key-file`, so serve binds to 127.0.0.1 behind the Box's
+    router, which terminates TLS.
 
 ## Reusable extension candidates
 
