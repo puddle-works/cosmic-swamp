@@ -6,3 +6,6 @@
 # Local extension sources (developer-specific, not shared)
 .swamp-sources.yaml
 # END swamp managed section
+
+# Built by .amp/box.yaml for the Box release
+/bin/
