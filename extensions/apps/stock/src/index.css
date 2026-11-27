@@ -157,6 +157,17 @@ body {
   font-weight: 500;
 }
 
+.pw-pill--warn {
+  background: color-mix(in srgb, var(--pw-danger) 10%, var(--pw-surface));
+  color: var(--pw-danger);
+  border-color: color-mix(in srgb, var(--pw-danger) 30%, transparent);
+}
+
+.pw-hint {
+  font-size: 0.8125rem;
+  color: var(--pw-text-3);
+}
+
 .pw-pill--muted {
   background: var(--pw-inset);
   color: var(--pw-text-2);

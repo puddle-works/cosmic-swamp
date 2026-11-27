@@ -4,9 +4,11 @@ import { InMemoryStore } from "./memory_store.ts";
 import {
   addBatch,
   allocate,
+  changeBatchQuantity,
   ConcurrentUpdate,
   ConflictingOrderLine,
   createOrderLine,
+  deallocate,
   UnknownOrderLine,
   UnknownSku,
   type Versioned,
@@ -105,6 +107,69 @@ Deno.test("allocating an allocated line again does not save the product again", 
   const again = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(again.batchref, "b-1");
   assertEquals(store.products.get("FELT-HAT")!.version, versionAfterFirst);
+});
+
+Deno.test("deallocating releases the line, records it as unallocated, and it can be allocated again", async () => {
+  const store = new InMemoryStore();
+  await addBatch({ ref: "b-1", sku: "FELT-HAT", qty: 10 }, store);
+  await createOrderLine({ orderid: "o-1", sku: "FELT-HAT", qty: 4 }, store);
+  await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
+
+  const view = await deallocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
+
+  assertEquals(view.batchref, null);
+  assertEquals(store.allocations.get("o-1/FELT-HAT"), view);
+  assertEquals(
+    store.products.get("FELT-HAT")!.value.batches[0].allocations,
+    [],
+  );
+  const version = store.products.get("FELT-HAT")!.version;
+  await deallocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
+  assertEquals(store.products.get("FELT-HAT")!.version, version);
+
+  const again = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
+  assertEquals(again.batchref, "b-1");
+  await assertRejects(
+    () => deallocate({ orderid: "o-9", sku: "FELT-HAT" }, store),
+    UnknownOrderLine,
+  );
+});
+
+Deno.test("changing a batch quantity saves the product once and updates the read model of every moved line", async () => {
+  const store = new InMemoryStore();
+  await addBatch({ ref: "wh", sku: "FELT-HAT", qty: 10 }, store);
+  await addBatch(
+    { ref: "ship", sku: "FELT-HAT", qty: 3, eta: "2027-02-01" },
+    store,
+  );
+  for (const [orderid, qty] of [["o-1", 5], ["o-2", 3], ["o-3", 2]] as const) {
+    await createOrderLine({ orderid, sku: "FELT-HAT", qty }, store);
+    await allocate({ orderid, sku: "FELT-HAT" }, store);
+  }
+  const version = store.products.get("FELT-HAT")!.version;
+
+  // 4 cannot cover o-1 (5) alone, so all three are released: o-3, o-2, o-1.
+  // Oldest first: o-1 (5) fits nowhere; o-2 (3) fits the warehouse's 4, which
+  // is preferred; o-3 (2) then takes the shipment.
+  const moved = await changeBatchQuantity({
+    ref: "wh",
+    sku: "FELT-HAT",
+    qty: 4,
+  }, store);
+
+  assertEquals(moved.map((v) => [v.orderid, v.batchref]), [
+    ["o-1", null],
+    ["o-2", "wh"],
+    ["o-3", "ship"],
+  ]);
+  assertEquals(store.products.get("FELT-HAT")!.version, version + 1);
+  assertEquals(store.allocations.get("o-1/FELT-HAT")!.batchref, null);
+  assertEquals(store.allocations.get("o-2/FELT-HAT")!.batchref, "wh");
+  assertEquals(store.allocations.get("o-3/FELT-HAT")!.batchref, "ship");
+  await assertRejects(
+    () => changeBatchQuantity({ ref: "wh", sku: "NOPE", qty: 1 }, store),
+    UnknownSku,
+  );
 });
 
 /** A store whose next `holdReads` product reads wait for each other, forcing a read-read-write-write interleaving. */

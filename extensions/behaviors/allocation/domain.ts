@@ -65,6 +65,20 @@ export class SkuMismatch extends DomainError {
   }
 }
 
+/** The command names a batch the product does not hold. */
+export class UnknownBatch extends DomainError {
+  constructor(readonly sku: string, readonly reference: string) {
+    super(`No batch ${reference} for SKU ${sku}`);
+  }
+}
+
+/** Where each line a quantity change took out of its batch ended up. */
+export interface Reallocation {
+  line: OrderLine;
+  /** The batch now holding the line, or null when no batch had room. */
+  batchref: string | null;
+}
+
 const sameLine = (a: OrderLine, b: OrderLine) =>
   a.orderid === b.orderid && a.sku === b.sku && a.qty === b.qty;
 
@@ -144,6 +158,18 @@ export class Batch {
   deallocate(line: OrderLine): void {
     this.#allocations = this.#allocations.filter((l) => !sameLine(l, line));
   }
+
+  /**
+   * Sets the purchased quantity. If the batch no longer covers its
+   * allocations, releases lines, most recently allocated first, until it
+   * does, and returns them in the order they were released.
+   */
+  changePurchasedQuantity(qty: number): OrderLine[] {
+    this.#purchased = qty;
+    const released: OrderLine[] = [];
+    while (this.availableQuantity < 0) released.push(this.#allocations.pop()!);
+    return released;
+  }
 }
 
 /**
@@ -215,6 +241,34 @@ export class Product {
     }
     batch.allocate(line);
     return batch.reference;
+  }
+
+  /** Releases the line from the batch holding it and returns that batch's reference, or null if it was not allocated. */
+  deallocate(line: OrderLine): string | null {
+    const batch = this.allocationOf(line);
+    batch?.deallocate(line);
+    return batch?.reference ?? null;
+  }
+
+  /**
+   * Changes a batch's purchased quantity (the book's chapter 9). Lines the
+   * batch can no longer cover are reallocated, oldest allocation first, by
+   * the usual preference, which can include what is left of the same batch.
+   * A line no batch has room for stays unallocated rather than failing the
+   * change: the new quantity is a fact about the stock, not a request.
+   */
+  changeBatchQuantity(reference: string, qty: number): Reallocation[] {
+    const batch = this.batches.find((b) => b.reference === reference);
+    if (!batch) throw new UnknownBatch(this.sku, reference);
+    const released = batch.changePurchasedQuantity(qty).reverse();
+    return released.map((line) => {
+      try {
+        return { line, batchref: this.allocate(line) };
+      } catch (err) {
+        if (err instanceof OutOfStock) return { line, batchref: null };
+        throw err;
+      }
+    });
   }
 
   get availableQuantity(): number {

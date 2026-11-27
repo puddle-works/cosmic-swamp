@@ -24,9 +24,10 @@ no external consumers.
 ## When this changes
 
 - `change_batch_quantity` (chapter 9) needs "deallocate, then reallocate".
-  The first choice is to do it inside one method on the aggregate, which keeps
-  it atomic under the lock. A workflow with steps is the alternative when the
-  steps must be visible or resumable.
+  Done (2026-11-27) inside one method on the aggregate, which keeps it atomic
+  under the lock: the book's `AllocationRequired` events become a loop in
+  `Product.changeBatchQuantity`. A workflow with steps is the alternative if
+  the steps ever need to be visible or resumable.
 - External events in (chapter 11): `swamp serve --webhook` triggers a
   workflow, or `wait_for_signal` steps take JSON messages.
 - External events out: a behavior method that calls the outside system, run as

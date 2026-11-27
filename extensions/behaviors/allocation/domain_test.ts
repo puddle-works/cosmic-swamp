@@ -5,6 +5,7 @@ import {
   OutOfStock,
   Product,
   SkuMismatch,
+  UnknownBatch,
 } from "./domain.ts";
 
 const TODAY = "2026-12-01";
@@ -157,4 +158,62 @@ Deno.test("product state round-trips with its allocations", () => {
   const copy = Product.fromState(JSON.parse(JSON.stringify(product.toState())));
   assertEquals(copy.toState(), product.toState());
   assertThrows(() => copy.allocate(line("o-2", "TIN-KETTLE", 2)), OutOfStock);
+});
+
+// --- Deallocation and batch quantity changes (chapter 9) -------------------
+
+Deno.test("deallocating returns the line's batch and frees its stock; an unallocated line gives null", () => {
+  const product = new Product("BRASS-BELL");
+  product.addBatch("wh", 5, null);
+  product.allocate(line("o-1", "BRASS-BELL", 2));
+
+  assertEquals(product.deallocate(line("o-1", "BRASS-BELL", 2)), "wh");
+  assertEquals(product.availableQuantity, 5);
+  assertEquals(product.deallocate(line("o-1", "BRASS-BELL", 2)), null);
+});
+
+Deno.test("shrinking a batch releases its newest lines until it fits, and reallocates them oldest first", () => {
+  const product = new Product("BRASS-BELL");
+  product.addBatch("wh", 10, null);
+  product.addBatch("ship", 10, TODAY);
+  product.allocate(line("o-1", "BRASS-BELL", 3));
+  product.allocate(line("o-2", "BRASS-BELL", 4));
+  product.allocate(line("o-3", "BRASS-BELL", 2));
+
+  // 6 cannot cover 3 + 4 + 2. Releasing o-3, then o-2, is enough (3 left).
+  // o-2 (4) no longer fits the warehouse and goes to the shipment; o-3 (2)
+  // fits what is left of the warehouse, which is still preferred.
+  const moved = product.changeBatchQuantity("wh", 6);
+
+  assertEquals(moved, [
+    { line: line("o-2", "BRASS-BELL", 4), batchref: "ship" },
+    { line: line("o-3", "BRASS-BELL", 2), batchref: "wh" },
+  ]);
+  const [wh, ship] = product.batches;
+  assertEquals(wh.allocations.map((l) => l.orderid), ["o-1", "o-3"]);
+  assertEquals([wh.purchasedQuantity, wh.availableQuantity], [6, 1]);
+  assertEquals(ship.allocations.map((l) => l.orderid), ["o-2"]);
+});
+
+Deno.test("a line no batch has room for stays unallocated, and the new quantity still applies", () => {
+  const product = new Product("BRASS-BELL");
+  product.addBatch("wh", 5, null);
+  product.allocate(line("o-1", "BRASS-BELL", 5));
+
+  const moved = product.changeBatchQuantity("wh", 2);
+
+  assertEquals(moved, [{ line: line("o-1", "BRASS-BELL", 5), batchref: null }]);
+  assertEquals(product.batches[0].purchasedQuantity, 2);
+  assertEquals(product.availableQuantity, 2);
+  assertEquals(product.allocationOf(line("o-1", "BRASS-BELL", 5)), undefined);
+});
+
+Deno.test("growing a batch moves no lines; an unknown batch is refused", () => {
+  const product = new Product("BRASS-BELL");
+  product.addBatch("wh", 5, null);
+  product.allocate(line("o-1", "BRASS-BELL", 5));
+
+  assertEquals(product.changeBatchQuantity("wh", 8), []);
+  assertEquals(product.availableQuantity, 3);
+  assertThrows(() => product.changeBatchQuantity("nope", 1), UnknownBatch);
 });

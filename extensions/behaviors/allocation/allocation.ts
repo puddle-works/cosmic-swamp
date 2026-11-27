@@ -49,6 +49,19 @@ const AllocateArgs = z.object({
   sku: Identifier.describe("Stock-keeping unit of a recorded order line"),
 });
 
+const DeallocateArgs = z.object({
+  orderid: Identifier.describe("Order reference"),
+  sku: Identifier.describe("Stock-keeping unit of a recorded order line"),
+});
+
+const ChangeBatchQuantityArgs = z.object({
+  ref: Identifier.describe("Batch reference"),
+  sku: Identifier.describe("Stock-keeping unit of the batch"),
+  qty: z.coerce.number().int().nonnegative().describe(
+    "New purchased quantity; 0 when none of the batch is usable",
+  ),
+});
+
 const OrderLineSchema = z.object({
   orderid: z.string(),
   sku: z.string(),
@@ -66,7 +79,7 @@ const BatchSchema = z.object({
 });
 
 type Context = StoreContext & {
-  logger: { info(msg: string, ...args: unknown[]): void };
+  logger: { info(msg: string, properties?: Record<string, unknown>): void };
 };
 
 /** Runs a service command against the datastore and returns what it wrote. */
@@ -81,7 +94,7 @@ async function run<T>(
 
 export const behavior = {
   type: "@puddleworks/allocation",
-  version: "2026.11.27.1",
+  version: "2026.11.27.2",
   globalArguments: z.object({}),
   resources: {
     product: {
@@ -102,8 +115,9 @@ export const behavior = {
       garbageCollection: 5,
     },
     allocation: {
-      description: "Read model: the batch an order line was allocated to",
-      schema: OrderLineSchema.extend({ batchref: z.string() }),
+      description:
+        "Read model: the batch an order line is allocated to, or null once it was released and not reallocated",
+      schema: OrderLineSchema.extend({ batchref: z.string().nullable() }),
       lifetime: "infinite",
       garbageCollection: 5,
     },
@@ -120,12 +134,7 @@ export const behavior = {
           context,
           (store) => service.addBatch(cmd, store),
         );
-        context.logger.info(
-          "Added batch {ref} of {qty} x {sku}",
-          cmd.ref,
-          cmd.qty,
-          cmd.sku,
-        );
+        context.logger.info("Added batch {ref} of {qty} x {sku}", cmd);
         return { dataHandles };
       },
     },
@@ -159,10 +168,53 @@ export const behavior = {
           context,
           (store) => service.allocate(cmd, store),
         );
+        context.logger.info("Allocated {orderid} to batch {batchref}", {
+          ...result,
+        });
+        return { dataHandles };
+      },
+    },
+    deallocate: {
+      description:
+        "Release a recorded order line from its batch (no change if it is not allocated)",
+      kind: "update",
+      rollbackOnFailure: true,
+      arguments: DeallocateArgs,
+      execute: async (
+        args: z.infer<typeof DeallocateArgs>,
+        context: Context,
+      ) => {
+        const cmd = DeallocateArgs.parse(args);
+        const { dataHandles } = await run(
+          context,
+          (store) => service.deallocate(cmd, store),
+        );
+        context.logger.info("Released {orderid}", cmd);
+        return { dataHandles };
+      },
+    },
+    change_batch_quantity: {
+      description:
+        "Set a batch's purchased quantity; lines it can no longer cover are reallocated, or left unallocated if no batch has room",
+      kind: "update",
+      rollbackOnFailure: true,
+      arguments: ChangeBatchQuantityArgs,
+      execute: async (
+        args: z.infer<typeof ChangeBatchQuantityArgs>,
+        context: Context,
+      ) => {
+        const cmd = ChangeBatchQuantityArgs.parse(args);
+        const { result, dataHandles } = await run(
+          context,
+          (store) => service.changeBatchQuantity(cmd, store),
+        );
         context.logger.info(
-          "Allocated {orderid} to batch {batchref}",
-          result.orderid,
-          result.batchref,
+          "Batch {ref} of {sku} is now {qty}; {moved} line(s) moved, {unallocated} unallocated",
+          {
+            ...cmd,
+            moved: result.length,
+            unallocated: result.filter((v) => v.batchref === null).length,
+          },
         );
         return { dataHandles };
       },

@@ -23,7 +23,8 @@ export interface AllocationRow {
   orderid: string;
   sku: string;
   qty: number;
-  batchref: string;
+  /** null: the line was released (deallocated, or its batch shrank) and is not allocated now. */
+  batchref: string | null;
 }
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -62,8 +63,9 @@ export function batchRows(contents: unknown[]): BatchRow[] {
 export function allocationRows(contents: unknown[]): AllocationRow[] {
   return contents.flatMap((content) => {
     const a = record(content);
-    const orderid = str(a?.orderid), sku = str(a?.sku), batchref = str(a?.batchref), qty = num(a?.qty);
-    return orderid && sku && batchref && qty !== null ? [{ orderid, sku, qty, batchref }] : [];
+    const orderid = str(a?.orderid), sku = str(a?.sku), batchref = a?.batchref === null ? null : str(a?.batchref), qty = num(a?.qty);
+    const valid = orderid && sku && qty !== null && (batchref !== null || a?.batchref === null);
+    return valid ? [{ orderid, sku, qty, batchref }] : [];
   }).sort((x, y) => x.sku.localeCompare(y.sku) || x.orderid.localeCompare(y.orderid));
 }
 
@@ -97,4 +99,16 @@ export function orderInputs(form: { orderid: string; sku: string; qty: string })
   if (!form.orderid.trim() || !form.sku.trim()) return { error: "Order and SKU are required" };
   if (!Number.isInteger(qty) || qty < 1) return { error: "Quantity must be a whole number above 0" };
   return { inputs: { orderid: form.orderid.trim(), sku: form.sku.trim(), qty } };
+}
+
+/** A batch's new quantity may be 0 (none of it usable), unlike a new batch's. */
+export function quantityInputs(form: { ref: string; sku: string; qty: string }):
+  | { inputs: { ref: string; sku: string; qty: number } }
+  | { error: string } {
+  const qty = Number(form.qty);
+  if (!form.ref.trim() || !form.sku.trim()) return { error: "Batch and SKU are required" };
+  if (form.qty.trim() === "" || !Number.isInteger(qty) || qty < 0) {
+    return { error: "Quantity must be a whole number, 0 or more" };
+  }
+  return { inputs: { ref: form.ref.trim(), sku: form.sku.trim(), qty } };
 }

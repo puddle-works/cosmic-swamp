@@ -8,4 +8,4 @@ run: []
 methods:
   - behavior: stock
     type: "@puddleworks/allocation"
-    methods: [add_batch, create_order_line, allocate]
+    methods: [add_batch, create_order_line, allocate, deallocate, change_batch_quantity]

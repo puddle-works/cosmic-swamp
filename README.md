@@ -18,6 +18,11 @@ the book's domain rules and test scenarios are the functional specification.
   stock first, then the earliest shipment. A line is never split across batches.
 - View allocations and remaining stock.
 - Get `Insufficient stock for SKU …` when no batch can take the line.
+- Release (deallocate) an order line, and allocate it again later.
+- Change a batch's quantity, for example after damage or a short delivery.
+  Lines the batch can no longer cover are released, newest first, and
+  reallocated by the usual preference; a line no batch has room for is shown
+  as unallocated.
 
 State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 `swamp serve` restarts and machine restarts.
@@ -27,7 +32,7 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | Path | Role |
 | --- | --- |
 | `extensions/behaviors/allocation/domain.ts` | Domain model: `Batch`, `Product` aggregate, `OrderLine`, errors. Pure TypeScript. |
-| `extensions/behaviors/allocation/service.ts` | Service layer: `addBatch`, `createOrderLine`, `allocate`, and the `AllocationStore` port. |
+| `extensions/behaviors/allocation/service.ts` | Service layer: `addBatch`, `createOrderLine`, `allocate`, `deallocate`, `changeBatchQuantity`, and the `AllocationStore` port. |
 | `extensions/behaviors/allocation/swamp_store.ts` | The store adapter on Swamp data, with the lost-update guard. |
 | `extensions/behaviors/allocation/memory_store.ts` | In-memory store for service tests. |
 | `extensions/behaviors/allocation/allocation.ts` | The `@puddleworks/allocation` behavior type: one method per command. |
@@ -49,6 +54,8 @@ swamp behavior run stock add_batch --input ref=wh-1 --input sku=RETRO-CLOCK --in
 swamp behavior run stock add_batch --input ref=ship-1 --input sku=RETRO-CLOCK --input qty=100 --input eta=2026-12-15
 swamp behavior run stock create_order_line --input orderid=o-1 --input sku=RETRO-CLOCK --input qty=15
 swamp behavior run stock allocate --input orderid=o-1 --input sku=RETRO-CLOCK
+swamp behavior run stock deallocate --input orderid=o-1 --input sku=RETRO-CLOCK
+swamp behavior run stock change_batch_quantity --input ref=wh-1 --input sku=RETRO-CLOCK --input qty=5
 
 # Or both order steps as one workflow run
 swamp workflow run @puddleworks/place-order --input orderid=o-2 --input sku=RETRO-CLOCK --input qty=10
@@ -80,9 +87,10 @@ swamp serve --dashboard --trusted-hosts stock.example.com
 ```
 
 Swamp apps cannot be opened through a proxy that signs people in with a cookie,
-such as an Amp portal: the app's sandboxed frame fetches its files without
-cookies, so the proxy redirects them and the app stays blank. Open it on
-loopback, or behind a proxy that does not need a cookie.
+such as an Amp portal or a private Amp Box deployment: the app's sandboxed
+frame fetches its files without cookies, so the proxy redirects them and the
+app stays blank. Open it on loopback, or on a public route with serve's own
+sign-in (see "Deployed on an Amp Box").
 
 In an Amp orb, `.agents/setup` installs Swamp and approves the app, and
 `.amp/services.yaml` runs `swamp serve` (`amp orb services ensure`).
@@ -90,11 +98,29 @@ In an Amp orb, `.agents/setup` installs Swamp and approves the app, and
 The local `swamp dashboard` shows the app read-only, because it refuses method
 runs. Writes need `swamp serve`.
 
+## Deployed on an Amp Box
+
+The app runs at https://stock--mellens.onamp.dev/apps/@puddleworks/stock on
+the Box `mellens/cosmic-swamp`, deployment `stock`. `.amp/box.yaml` ships the
+pinned swamp binary with the code, and `scripts/box-serve.sh` starts
+`swamp serve --auth-mode token`: the URL is public, but nothing loads without
+a serve token. The script mints one token named `owner` (90 days, renewed on
+the first restart after it expires). To read it:
+
+```sh
+amp boxes exec mellens/cosmic-swamp --deployment stock --as-app 'SWAMP_HOME="$AMP_DEPLOYMENT_DATA_DIRECTORY/swamp-home" bin/swamp access token reveal owner --yes --repo-dir "$AMP_DEPLOYMENT_DATA_DIRECTORY/repo"'
+```
+
+The deployment needs `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` as deployment
+secrets (a swamp-club collective token and its sign-in token). Stock data,
+tokens and the app's approval live in the deployment's data directory and
+survive redeploys. Redeploy pushed code with `amp boxes deploy`.
+
 ## Tests
 
 ```sh
-~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (26)
-(cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (4)
+~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (32)
+(cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (5)
 swamp workflow validate @puddleworks/place-order
 ./scripts/concurrency_check.sh 10                           # end to end race, against the real datastore
 ```

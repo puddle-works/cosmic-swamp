@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { connectApp, createMockHost } from "@swamp-club/app-sdk";
-import { allocationRows, batchInputs, batchRows, orderInputs, PRODUCTS_QUERY, totalsBySku } from "./stock.ts";
+import { allocationRows, batchInputs, batchRows, orderInputs, PRODUCTS_QUERY, quantityInputs, totalsBySku } from "./stock.ts";
 
 const product = {
   sku: "LAMP",
@@ -18,10 +18,24 @@ test("batches list warehouse stock first, then shipments by ETA, and skip malfor
   expect(totalsBySku(rows)).toEqual([{ sku: "LAMP", available: 25 }]);
 });
 
-test("allocations need every field", () => {
-  expect(allocationRows([{ orderid: "o-1", sku: "LAMP", qty: 3, batchref: "wh" }, { orderid: "o-2" }])).toEqual([
+test("allocations need every field; a null batch means released, a missing one is malformed", () => {
+  expect(
+    allocationRows([
+      { orderid: "o-1", sku: "LAMP", qty: 3, batchref: "wh" },
+      { orderid: "o-2", sku: "LAMP", qty: 1, batchref: null },
+      { orderid: "o-3", sku: "LAMP", qty: 1 },
+      { orderid: "o-4" },
+    ]),
+  ).toEqual([
     { orderid: "o-1", sku: "LAMP", qty: 3, batchref: "wh" },
+    { orderid: "o-2", sku: "LAMP", qty: 1, batchref: null },
   ]);
+});
+
+test("a batch quantity may change to 0 but not below, and must be given", () => {
+  expect(quantityInputs({ ref: " wh ", sku: "LAMP", qty: "0" })).toEqual({ inputs: { ref: "wh", sku: "LAMP", qty: 0 } });
+  expect(quantityInputs({ ref: "wh", sku: "LAMP", qty: "-1" })).toHaveProperty("error");
+  expect(quantityInputs({ ref: "wh", sku: "LAMP", qty: "" })).toHaveProperty("error");
 });
 
 test("form values become method inputs, and the arrival date is optional", () => {

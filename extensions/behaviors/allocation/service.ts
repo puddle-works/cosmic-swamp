@@ -20,12 +20,12 @@ export interface Versioned<T> {
   version: number;
 }
 
-/** What one allocation produced; stored as the `allocation` read model. */
+/** Where an order line is allocated; stored as the `allocation` read model. `batchref` is null once the line has been released and not reallocated. */
 export interface AllocationView {
   orderid: string;
   sku: string;
   qty: number;
-  batchref: string;
+  batchref: string | null;
 }
 
 /**
@@ -146,4 +146,57 @@ export async function allocate(
   };
   await store.saveAllocation(view);
   return view;
+}
+
+export interface Deallocate {
+  orderid: string;
+  sku: string;
+}
+
+/**
+ * Releases a recorded order line from its batch. Releasing a line that is
+ * not allocated changes nothing. `allocate` can allocate it again.
+ */
+export async function deallocate(
+  cmd: Deallocate,
+  store: AllocationStore,
+): Promise<AllocationView> {
+  const line = await store.getOrderLine(cmd.orderid, cmd.sku);
+  if (!line) throw new UnknownOrderLine(cmd.orderid, cmd.sku);
+  const view = { ...line, batchref: null };
+  const stored = await store.getProduct(line.sku);
+  if (!stored) throw new UnknownSku(line.sku);
+
+  const product = Product.fromState(stored.value);
+  if (product.deallocate(line) === null) return view;
+  await store.saveProduct(product.toState(), stored.version);
+  await store.saveAllocation(view);
+  return view;
+}
+
+export interface ChangeBatchQuantity {
+  ref: string;
+  sku: string;
+  qty: number;
+}
+
+/**
+ * Sets a batch's purchased quantity and reallocates the lines it can no
+ * longer cover, all in one save of the product. Returns an allocation view
+ * for every line that moved; a null `batchref` means no batch had room.
+ */
+export async function changeBatchQuantity(
+  cmd: ChangeBatchQuantity,
+  store: AllocationStore,
+): Promise<AllocationView[]> {
+  const stored = await store.getProduct(cmd.sku);
+  if (!stored) throw new UnknownSku(cmd.sku);
+
+  const product = Product.fromState(stored.value);
+  const moved = product.changeBatchQuantity(cmd.ref, cmd.qty).map((
+    { line, batchref },
+  ) => ({ ...line, batchref }));
+  await store.saveProduct(product.toState(), stored.version);
+  for (const view of moved) await store.saveAllocation(view);
+  return moved;
 }

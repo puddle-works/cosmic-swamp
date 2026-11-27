@@ -26,6 +26,7 @@ import {
   batchRows,
   orderInputs,
   PRODUCTS_QUERY,
+  quantityInputs,
   totalsBySku,
 } from "./stock/stock.ts";
 
@@ -75,6 +76,7 @@ export function App() {
   const method = useMethodRun();
   const [batch, setBatch] = useState({ ref: "", sku: "", qty: "", eta: "" });
   const [order, setOrder] = useState({ orderid: "", sku: "", qty: "" });
+  const [change, setChange] = useState({ ref: "", sku: "", qty: "" });
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const rows = batchRows(products.data?.data.results.map((r) => r.content) ?? []);
@@ -113,6 +115,30 @@ export function App() {
     }
   }
 
+  async function submitChange(e: FormEvent) {
+    e.preventDefault();
+    const parsed = quantityInputs(change);
+    if ("error" in parsed) return setMessage({ kind: "error", text: parsed.error });
+    try {
+      await call("change_batch_quantity", parsed.inputs);
+      setMessage({ kind: "ok", text: `Batch ${parsed.inputs.ref} is now ${parsed.inputs.qty}` });
+      setChange({ ref: "", sku: "", qty: "" });
+    } catch (err) {
+      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /** Releases an allocated line, or retries allocation for a released one. */
+  async function toggleAllocation(a: { orderid: string; sku: string; batchref: string | null }) {
+    const release = a.batchref !== null;
+    try {
+      await call(release ? "deallocate" : "allocate", { orderid: a.orderid, sku: a.sku });
+      setMessage({ kind: "ok", text: release ? `Released order ${a.orderid}` : `Allocated order ${a.orderid}` });
+    } catch (err) {
+      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   return (
     <main className="flex flex-col gap-4 p-4">
       <header className="pw-header flex items-center justify-between">
@@ -144,7 +170,7 @@ export function App() {
         </Alert>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="pw-card">
           <CardHeader>
             <CardTitle className="pw-label">Add batch</CardTitle>
@@ -183,6 +209,29 @@ export function App() {
               <Field id="o-qty" label="Quantity" value={order.qty} onChange={(qty) => setOrder({ ...order, qty })} />
               <Button type="submit" disabled={!writable || method.running} className="col-span-2">
                 Allocate
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+        <Card className="pw-card">
+          <CardHeader>
+            <CardTitle className="pw-label">Change batch quantity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="grid grid-cols-2 gap-3" onSubmit={submitChange}>
+              <Field id="c-ref" label="Batch" value={change.ref} onChange={(ref) => setChange({ ...change, ref })} />
+              <Field id="c-sku" label="SKU" value={change.sku} onChange={(sku) => setChange({ ...change, sku })} />
+              <Field
+                id="c-qty"
+                label="New quantity"
+                value={change.qty}
+                onChange={(qty) => setChange({ ...change, qty })}
+              />
+              <p className="pw-hint col-span-2">
+                Lines the batch can no longer cover move to another batch, or become unallocated.
+              </p>
+              <Button type="submit" disabled={!writable || method.running} className="col-span-2">
+                Change quantity
               </Button>
             </form>
           </CardContent>
@@ -239,6 +288,9 @@ export function App() {
                 <TableHead>SKU</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Batch</TableHead>
+                <TableHead className="text-right">
+                  <span className="sr-only">Action</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -247,7 +299,19 @@ export function App() {
                   <TableCell>{a.orderid}</TableCell>
                   <TableCell>{a.sku}</TableCell>
                   <TableCell className="text-right tabular-nums">{a.qty}</TableCell>
-                  <TableCell>{a.batchref}</TableCell>
+                  <TableCell>
+                    {a.batchref ?? <Badge className="pw-pill pw-pill--warn">Unallocated</Badge>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!writable || method.running}
+                      onClick={() => toggleAllocation(a)}
+                    >
+                      {a.batchref === null ? "Allocate" : "Release"}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
