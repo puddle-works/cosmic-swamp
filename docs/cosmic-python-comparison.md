@@ -122,11 +122,3 @@ Swamp's rule is in `domain.ts` or `service.ts`.
   alternative isolation-level branch.
 - Earlier per-chapter branches of the book's code, except where noted.
 - Swamp platform gaps, which are in [platform-gaps.md](platform-gaps.md).
-
-## Known inconsistency
-
-The `allocate` step of `@puddleworks/place-order`
-([`workflows/workflow-e2c62355-8f16-41af-8330-9022eb3f9495.yaml`](../workflows/workflow-e2c62355-8f16-41af-8330-9022eb3f9495.yaml))
-is still described as "fails the run when stock is insufficient". Since
-chapter 8, `allocate` raises `OutOfStock` and succeeds instead. Only the
-description is wrong; the behaviour is right.

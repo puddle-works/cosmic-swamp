@@ -34,7 +34,7 @@ jobs:
         weight: 0
         allowFailure: false
       - name: allocate
-        description: Allocate the line; fails the run when stock is insufficient
+        description: Allocate the line; when no batch has room it stays unallocated and an OutOfStock event is saved
         task:
           type: model_method
           modelIdOrName: stock
