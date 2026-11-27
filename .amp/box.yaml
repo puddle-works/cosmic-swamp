@@ -1,0 +1,18 @@
+# Production on an Amp Box: swamp serve with the dashboard and the Stock app.
+# Services cannot run the orb's tools, so the release ships the swamp binary
+# that .agents/setup pinned. The service needs SWAMP_API_KEY as a deployment
+# secret (every swamp command checks a swamp-club credential).
+build: mkdir -p bin && cp "$(command -v swamp)" bin/swamp
+source: false
+artifacts:
+  - bin
+  - scripts/box-serve.sh
+  - .swamp.yaml
+  - manifest.yaml
+  - extensions
+  - models
+  - workflows
+  - vaults
+services:
+  serve:
+    command: scripts/box-serve.sh

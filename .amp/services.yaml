@@ -1,0 +1,17 @@
+services:
+  swamp-serve:
+    # The Swamp dashboard and the Stock app. --trusted-hosts lets the portal's
+    # browser origin through serve's origin check; without it the dashboard
+    # sits at "starting" because its WebSocket is refused.
+    command: >-
+      export PATH="$HOME/.local/bin:$PATH" &&
+      swamp serve --dashboard --port "$PORT"
+      --trusted-hosts "$(printf '%s' "$PUBLIC_URL" | sed -E 's#^https?://([^/]+).*#\1#')"
+    health: /ready
+    portal:
+      url: /apps/@puddleworks/stock
+      title: Stock app
+      description: Puddle Works stock allocation. The Swamp dashboard is at /dashboard.
+    portals:
+      - url: /dashboard
+        title: Swamp dashboard

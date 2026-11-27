@@ -1,0 +1,11 @@
+name: "@puddleworks/stock"
+title: "Stock allocation"
+entry: dist/index.html
+bridge: 1
+platform: "1.5"
+capabilities: [data:read]
+run: []
+methods:
+  - behavior: stock
+    type: "@puddleworks/allocation"
+    methods: [add_batch, create_order_line, allocate]

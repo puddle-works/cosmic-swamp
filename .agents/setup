@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Prepares a fresh orb for this repo. Safe to run more than once.
+# Long-running services are declared in .amp/services.yaml, not started here.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Swamp, pinned to the release this repo was built and tested with. The
+# installer needs the full release name; the short swampVersion in
+# .swamp.yaml is not found. Bump both together.
+SWAMP_VERSION="20261127.024011.0-sha.2d6f287a"
+SWAMP_BIN_DIR="${SWAMP_BIN_DIR:-$HOME/.local/bin}"
+export PATH="$SWAMP_BIN_DIR:$PATH"
+if ! swamp --version 2>/dev/null | grep -q "swamp ${SWAMP_VERSION}"; then
+  installer="$(mktemp -d)/install.sh"
+  curl -fsSL https://swamp-club.com/install.sh -o "$installer"
+  sh "$installer" -V "$SWAMP_VERSION" -d "$SWAMP_BIN_DIR"
+  rm -rf "$(dirname "$installer")"
+fi
+swamp --version
+
+# Swamp needs a swamp-club credential for every command; the orb gets it as
+# SWAMP_API_KEY from Amp's environment settings.
+if [ -z "${SWAMP_API_KEY:-}" ]; then
+  echo "SWAMP_API_KEY is not set: add it to the Amp project's secrets" >&2
+  exit 1
+fi
+
+# The app's approval lives in .swamp/, which git does not carry. The repo
+# owner approved @puddleworks/stock with exactly these capabilities: data:read
+# and add_batch, create_order_line, allocate on the `stock` behavior. If
+# app.yaml asks for more, approval falls back to review and this re-approves
+# only what app.yaml declares, so review app.yaml changes before merging.
+swamp app approve @puddleworks/stock --yes >/dev/null
+swamp app list | head -1

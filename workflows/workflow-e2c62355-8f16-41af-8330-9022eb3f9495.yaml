@@ -1,0 +1,46 @@
+id: e2c62355-8f16-41af-8330-9022eb3f9495
+name: '@puddleworks/place-order'
+description: Record an order line and allocate it to the preferred batch in one run
+tags: {}
+inputs:
+  type: object
+  properties:
+    orderid: { type: string }
+    sku: { type: string }
+    qty: { type: integer, minimum: 1 }
+  required: [orderid, sku, qty]
+jobs:
+  - name: place
+    description: Record, then allocate
+    steps:
+      - name: record-line
+        description: Record the order line (idempotent for the same quantity)
+        task:
+          type: model_method
+          modelIdOrName: stock
+          methodName: create_order_line
+          inputs:
+            orderid: ${{ inputs.orderid }}
+            sku: ${{ inputs.sku }}
+            qty: ${{ inputs.qty }}
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: allocate
+        description: Allocate the line; fails the run when stock is insufficient
+        task:
+          type: model_method
+          modelIdOrName: stock
+          methodName: allocate
+          inputs:
+            orderid: ${{ inputs.orderid }}
+            sku: ${{ inputs.sku }}
+        dependsOn:
+          - step: record-line
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

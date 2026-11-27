@@ -1,0 +1,122 @@
+# Cosmic Swamp
+
+The stock allocation service from *Architecture Patterns with Python*
+([cosmicpython.com](https://www.cosmicpython.com)), rebuilt as Swamp-native
+software: one behavior type, one workflow and one Swamp App, with Swamp's
+datastore as the database and its per-behavior lock as the concurrency
+control. No web framework, database or broker.
+
+This is an independent implementation. No code from
+[cosmicpython/code](https://github.com/cosmicpython/code) (CC BY-ND) is copied;
+the book's domain rules and test scenarios are the functional specification.
+
+## What it does
+
+- Add a stock batch: SKU, quantity, optional arrival date.
+- View available stock per batch and per SKU.
+- Record an order line, then allocate it to the preferred batch: warehouse
+  stock first, then the earliest shipment. A line is never split across batches.
+- View allocations and remaining stock.
+- Get `Insufficient stock for SKU …` when no batch can take the line.
+
+State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
+`swamp serve` restarts and machine restarts.
+
+## Layout
+
+| Path | Role |
+| --- | --- |
+| `extensions/behaviors/allocation/domain.ts` | Domain model: `Batch`, `Product` aggregate, `OrderLine`, errors. Pure TypeScript. |
+| `extensions/behaviors/allocation/service.ts` | Service layer: `addBatch`, `createOrderLine`, `allocate`, and the `AllocationStore` port. |
+| `extensions/behaviors/allocation/swamp_store.ts` | The store adapter on Swamp data, with the lost-update guard. |
+| `extensions/behaviors/allocation/memory_store.ts` | In-memory store for service tests. |
+| `extensions/behaviors/allocation/allocation.ts` | The `@puddleworks/allocation` behavior type: one method per command. |
+| `models/@puddleworks/allocation/stock.yaml` | The `stock` behavior definition the CLI, workflow and app use. |
+| `workflows/workflow-e2c62355-….yaml` | `@puddleworks/place-order`: record a line, then allocate it. |
+| `extensions/apps/stock/` | The `@puddleworks/stock` Swamp App. |
+| `scripts/concurrency_check.sh` | Races N allocation processes against one batch. |
+| `manifest.yaml` | Extension package: behavior, workflow and app. |
+| `docs/` | ADRs, chapter mapping, platform gaps, progress. |
+
+## Run it locally
+
+Prerequisites: Swamp (`curl -fsSL https://swamp-club.com/install.sh | sh`;
+built and tested with `20261127.024011.0`) and, for the app only, Bun.
+
+```sh
+# Commands, one process each; state persists between them
+swamp behavior run stock add_batch --input ref=wh-1 --input sku=RETRO-CLOCK --input qty=20
+swamp behavior run stock add_batch --input ref=ship-1 --input sku=RETRO-CLOCK --input qty=100 --input eta=2026-12-15
+swamp behavior run stock create_order_line --input orderid=o-1 --input sku=RETRO-CLOCK --input qty=15
+swamp behavior run stock allocate --input orderid=o-1 --input sku=RETRO-CLOCK
+
+# Or both order steps as one workflow run
+swamp workflow run @puddleworks/place-order --input orderid=o-2 --input sku=RETRO-CLOCK --input qty=10
+
+# Read side: stock and allocations are plain data queries
+swamp data query 'behavior("stock") && specName == "product"' --select attributes
+swamp data query 'behavior("stock") && specName == "allocation"' --select attributes
+```
+
+### The app
+
+```sh
+cd extensions/apps/stock && bun install && swamp app build && cd -
+swamp app approve @puddleworks/stock      # an operator decision: review what it asks for
+swamp serve --dashboard                   # then open http://127.0.0.1:9090/apps/@puddleworks/stock
+```
+
+The app carries the Puddle Works brand itself (Inter, the website's navy
+and teal palette in dark mode, a derived light mode, the puddle mark and
+wordmark), in `extensions/apps/stock/src/index.css`. The Swamp dashboard
+around it keeps Swamp's own look.
+
+Behind a proxy or any non-loopback address, tell serve the public host, or the
+dashboard's socket is refused (`untrusted origin`) and it never finishes
+starting:
+
+```sh
+swamp serve --dashboard --trusted-hosts stock.example.com
+```
+
+Swamp apps cannot be opened through a proxy that signs people in with a cookie,
+such as an Amp portal: the app's sandboxed frame fetches its files without
+cookies, so the proxy redirects them and the app stays blank. Open it on
+loopback, or behind a proxy that does not need a cookie.
+
+In an Amp orb, `.agents/setup` installs Swamp and approves the app, and
+`.amp/services.yaml` runs `swamp serve` (`amp orb services ensure`).
+
+The local `swamp dashboard` shows the app read-only, because it refuses method
+runs. Writes need `swamp serve`.
+
+## Tests
+
+```sh
+~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (26)
+(cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (4)
+swamp workflow validate @puddleworks/place-order
+./scripts/concurrency_check.sh 10                           # end to end race, against the real datastore
+```
+
+## Install the package elsewhere
+
+```sh
+swamp extension source add /path/to/cosmic-swamp   # local, no registry
+swamp behavior create @puddleworks/allocation stock
+```
+
+Publishing to the registry is `swamp extension push manifest.yaml` and has not
+been done.
+
+## Third-party
+
+`InterVariable.woff2` (Inter 4.1 by Rasmus Andersson) is under the SIL Open
+Font License 1.1; the licence is beside it and ships in the package.
+
+## Further reading
+
+- [docs/adr/](docs/adr/): the architecture decisions.
+- [docs/cosmic-python-mapping.md](docs/cosmic-python-mapping.md): each book chapter mapped to its Swamp equivalent.
+- [docs/platform-gaps.md](docs/platform-gaps.md): missing capabilities and possible reusable extensions.
+- [docs/progress.md](docs/progress.md): what is done, what is left, and what was learnt.
