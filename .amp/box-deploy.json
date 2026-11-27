@@ -3,6 +3,11 @@
     "default": {
       "on": "mellens/cosmic-swamp",
       "name": "stock"
+    },
+    "receiver": {
+      "on": "mellens/cosmic-swamp",
+      "name": "stock-events",
+      "root": "receiver"
     }
   }
 }
