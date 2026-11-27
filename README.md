@@ -226,5 +226,6 @@ Font License 1.1; the licence is beside it and ships in the package.
 
 - [docs/adr/](docs/adr/): the architecture decisions.
 - [docs/cosmic-python-mapping.md](docs/cosmic-python-mapping.md): each book chapter mapped to its Swamp equivalent.
+- [docs/cosmic-python-comparison.md](docs/cosmic-python-comparison.md): the book's code, its patterns and Cosmic Swamp compared, highlighting the differences.
 - [docs/platform-gaps.md](docs/platform-gaps.md): missing capabilities and possible reusable extensions.
 - [docs/progress.md](docs/progress.md): what is done, what is left, and what was learnt.
