@@ -89,6 +89,13 @@ says what was needed, what was done instead, and what would help.
     run id to poll, would let the book's request/response style work over a
     webhook.
 
+16. **No outbox, and no hook after a method's writes are committed.** The
+    behavior sends events at the end of its method, before Swamp has
+    finished recording the run, and does not retry. A failed send is lost
+    (logged only), and a send could in principle announce a change whose
+    commit then fails. An "after commit" hook, or a durable outbox Swamp
+    drains, would make events out reliable.
+
 ## Reusable extension candidates
 
 - **`@puddleworks/aggregate-store`**: a small library behaviors import to load

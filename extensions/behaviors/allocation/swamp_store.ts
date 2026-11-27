@@ -20,6 +20,7 @@
 import type { OrderLine, ProductState } from "./domain.ts";
 import { Product } from "./domain.ts";
 import {
+  type AllocationEvent,
   type AllocationStore,
   type AllocationView,
   ConcurrentUpdate,
@@ -76,6 +77,8 @@ export function productRecord(state: ProductState): Record<string, unknown> {
 export class SwampStore implements AllocationStore {
   /** Every handle this command wrote, returned by the method so Swamp lists them. */
   readonly handles: DataHandleLike[] = [];
+  /** Events the command recorded, sent by the behavior after its writes. */
+  readonly events: AllocationEvent[] = [];
 
   constructor(private ctx: StoreContext) {}
 
@@ -155,6 +158,10 @@ export class SwampStore implements AllocationStore {
     await this.#write("orderLine", lineName(line.orderid, line.sku), {
       ...line,
     });
+  }
+
+  recordEvent(event: AllocationEvent): void {
+    this.events.push(event);
   }
 
   async saveAllocation(view: AllocationView): Promise<void> {

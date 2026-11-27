@@ -29,6 +29,19 @@ export interface AllocationView {
 }
 
 /**
+ * What another system may want to hear about (the book's chapter 11, events
+ * out). `Allocated` also announces a line that moved to another batch;
+ * `Deallocated` names the batch the line left.
+ */
+export type AllocationEvent = {
+  type: "Allocated" | "Deallocated";
+  orderid: string;
+  sku: string;
+  qty: number;
+  batchref: string;
+};
+
+/**
  * The persistence port (the book's repository). Products are saved with the
  * version they were read at, so an implementation can refuse a save that
  * would overwrite a write it never saw.
@@ -40,6 +53,8 @@ export interface AllocationStore {
   getOrderLine(orderid: string, sku: string): Promise<OrderLine | null>;
   saveOrderLine(line: OrderLine): Promise<void>;
   saveAllocation(view: AllocationView): Promise<void>;
+  /** Records an event for the caller to send once the command's writes are done (the book's unit of work collecting events). */
+  recordEvent(event: AllocationEvent): void;
 }
 
 /** The SKU has no product, so nothing can be allocated against it. */
@@ -136,14 +151,16 @@ export async function allocate(
   const product = Product.fromState(stored.value);
   const alreadyIn = product.allocationOf(line);
   const batchref = product.allocate(line);
-  if (!alreadyIn) await store.saveProduct(product.toState(), stored.version);
-
   const view = {
     orderid: line.orderid,
     sku: line.sku,
     qty: line.qty,
     batchref,
   };
+  if (!alreadyIn) {
+    await store.saveProduct(product.toState(), stored.version);
+    store.recordEvent({ type: "Allocated", ...view });
+  }
   await store.saveAllocation(view);
   return view;
 }
@@ -168,9 +185,11 @@ export async function deallocate(
   if (!stored) throw new UnknownSku(line.sku);
 
   const product = Product.fromState(stored.value);
-  if (product.deallocate(line) === null) return view;
+  const released = product.deallocate(line);
+  if (released === null) return view;
   await store.saveProduct(product.toState(), stored.version);
   await store.saveAllocation(view);
+  store.recordEvent({ type: "Deallocated", ...line, batchref: released });
   return view;
 }
 
@@ -197,6 +216,18 @@ export async function changeBatchQuantity(
     { line, batchref },
   ) => ({ ...line, batchref }));
   await store.saveProduct(product.toState(), stored.version);
-  for (const view of moved) await store.saveAllocation(view);
+  for (const view of moved) {
+    await store.saveAllocation(view);
+    // A line that went back into the same batch did not move.
+    if (view.batchref === null) {
+      store.recordEvent({ type: "Deallocated", ...view, batchref: cmd.ref });
+    } else if (view.batchref !== cmd.ref) {
+      store.recordEvent({
+        type: "Allocated",
+        ...view,
+        batchref: view.batchref,
+      });
+    }
+  }
   return moved;
 }

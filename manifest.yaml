@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@puddleworks/cosmic-swamp"
-version: "2026.11.27.2"
+version: "2026.11.27.3"
 license: MIT
 description: "Stock allocation (Cosmic Python's example domain) as a Swamp behavior, workflow and app: batches, order lines, allocation with lost-update protection."
 labels:

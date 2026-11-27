@@ -1,0 +1,9 @@
+# The demo receiver for the Stock app's allocation events, deployed on the
+# same Box as `stock-events`. It checks signatures with STOCK_EVENTS_SECRET,
+# set once on the Box so the stock deployment signs with the same value.
+source: false
+artifacts:
+  - server.mjs
+services:
+  web:
+    command: node server.mjs

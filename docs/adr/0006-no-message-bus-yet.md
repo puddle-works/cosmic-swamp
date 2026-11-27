@@ -32,6 +32,9 @@ no external consumers.
   file, `webhook-routes/orders.yaml`, which runs `place-order` for each
   verified delivery. Still no bus: the webhook is just another caller of the
   same workflow.
-- External events out: a behavior method that calls the outside system, run as
-  a later workflow step. Swamp has no outbound event stream for this
+- External events out: done (2026-11-27) in the behavior rather than a
+  workflow step, so app clicks and quantity changes send events too, not only
+  `place-order`. Service functions record events on the store; the behavior
+  posts them after the command's writes. Still no bus: one in-process list
+  and one HTTP POST per event. Swamp has no outbound event stream
   (`data.subscribe` is for app clients); see `docs/platform-gaps.md`.

@@ -8,6 +8,7 @@
 
 import type { OrderLine, ProductState } from "./domain.ts";
 import {
+  type AllocationEvent,
   type AllocationStore,
   type AllocationView,
   ConcurrentUpdate,
@@ -20,6 +21,7 @@ export class InMemoryStore implements AllocationStore {
   products = new Map<string, Versioned<ProductState>>();
   lines = new Map<string, OrderLine>();
   allocations = new Map<string, AllocationView>();
+  events: AllocationEvent[] = [];
   productSaves = 0;
 
   getProduct(sku: string): Promise<Versioned<ProductState> | null> {
@@ -57,5 +59,9 @@ export class InMemoryStore implements AllocationStore {
   saveAllocation(view: AllocationView): Promise<void> {
     this.allocations.set(`${view.orderid}/${view.sku}`, clone(view));
     return Promise.resolve();
+  }
+
+  recordEvent(event: AllocationEvent): void {
+    this.events.push(clone(event));
   }
 }

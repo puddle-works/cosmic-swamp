@@ -11,6 +11,7 @@
 
 import { z } from "npm:zod@4";
 import * as service from "./service.ts";
+import { sendEvent } from "./event_sender.ts";
 import { type StoreContext, SwampStore } from "./swamp_store.ts";
 
 /** Identifiers become part of resource names, so keep them portable. */
@@ -78,23 +79,44 @@ const BatchSchema = z.object({
   availableQuantity: z.number(),
 });
 
-type Context = StoreContext & {
-  logger: { info(msg: string, properties?: Record<string, unknown>): void };
-};
+type Log = (msg: string, properties?: Record<string, unknown>) => void;
+type Context = StoreContext & { logger: { info: Log; warn: Log } };
 
-/** Runs a service command against the datastore and returns what it wrote. */
+/**
+ * Runs a service command against the datastore, then sends the events it
+ * recorded to STOCK_EVENTS_URL, signed with STOCK_EVENTS_SECRET, when set.
+ * Sending is best effort: the command's writes stand even when the receiver
+ * is down, and a failed send is logged, not retried (there is no outbox).
+ */
 async function run<T>(
   context: Context,
   command: (store: SwampStore) => Promise<T>,
 ) {
   const store = new SwampStore(context);
   const result = await command(store);
+  const url = Deno.env.get("STOCK_EVENTS_URL");
+  const secret = Deno.env.get("STOCK_EVENTS_SECRET");
+  for (const event of url ? store.events : []) {
+    if (!secret) {
+      context.logger.warn("STOCK_EVENTS_SECRET is not set; events not sent");
+      break;
+    }
+    try {
+      await sendEvent(url!, secret, event);
+      context.logger.info("Sent {type} for {orderid} ({batchref})", event);
+    } catch (err) {
+      context.logger.warn("Could not send {type} for {orderid}: {error}", {
+        ...event,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   return { result, dataHandles: store.handles };
 }
 
 export const behavior = {
   type: "@puddleworks/allocation",
-  version: "2026.11.27.2",
+  version: "2026.11.27.3",
   globalArguments: z.object({}),
   resources: {
     product: {

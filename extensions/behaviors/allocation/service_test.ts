@@ -50,6 +50,7 @@ Deno.test("allocating a recorded line returns and stores the allocation", async 
   assertEquals(store.products.get("FELT-HAT")!.value.batches[0].allocations, [
     { orderid: "o-1", sku: "FELT-HAT", qty: 4 },
   ]);
+  assertEquals(store.events, [{ type: "Allocated", ...view }]);
 });
 
 Deno.test("an unknown SKU is refused when recording a line", async () => {
@@ -95,6 +96,7 @@ Deno.test("out of stock saves nothing", async () => {
   );
   assertEquals(store.productSaves, savesBefore);
   assertEquals(store.allocations.size, 0);
+  assertEquals(store.events, []);
 });
 
 Deno.test("allocating an allocated line again does not save the product again", async () => {
@@ -107,6 +109,7 @@ Deno.test("allocating an allocated line again does not save the product again", 
   const again = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(again.batchref, "b-1");
   assertEquals(store.products.get("FELT-HAT")!.version, versionAfterFirst);
+  assertEquals(store.events.length, 1);
 });
 
 Deno.test("deallocating releases the line, records it as unallocated, and it can be allocated again", async () => {
@@ -126,6 +129,11 @@ Deno.test("deallocating releases the line, records it as unallocated, and it can
   const version = store.products.get("FELT-HAT")!.version;
   await deallocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(store.products.get("FELT-HAT")!.version, version);
+  // The event names the batch the line left; releasing it again says nothing.
+  assertEquals(store.events.map((e) => [e.type, e.batchref]), [
+    ["Allocated", "b-1"],
+    ["Deallocated", "b-1"],
+  ]);
 
   const again = await allocate({ orderid: "o-1", sku: "FELT-HAT" }, store);
   assertEquals(again.batchref, "b-1");
@@ -166,6 +174,23 @@ Deno.test("changing a batch quantity saves the product once and updates the read
   assertEquals(store.allocations.get("o-1/FELT-HAT")!.batchref, null);
   assertEquals(store.allocations.get("o-2/FELT-HAT")!.batchref, "wh");
   assertEquals(store.allocations.get("o-3/FELT-HAT")!.batchref, "ship");
+  // o-2 went back into the batch it left, so only o-1 and o-3 are news.
+  assertEquals(store.events.slice(3), [
+    {
+      type: "Deallocated",
+      orderid: "o-1",
+      sku: "FELT-HAT",
+      qty: 5,
+      batchref: "wh",
+    },
+    {
+      type: "Allocated",
+      orderid: "o-3",
+      sku: "FELT-HAT",
+      qty: 2,
+      batchref: "ship",
+    },
+  ]);
   await assertRejects(
     () => changeBatchQuantity({ ref: "wh", sku: "NOPE", qty: 1 }, store),
     UnknownSku,

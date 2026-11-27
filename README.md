@@ -25,6 +25,9 @@ the book's domain rules and test scenarios are the functional specification.
   as unallocated.
 - Take orders from another system: a signed `POST /hooks/orders` with
   `{"orderid", "sku", "qty"}` runs the same `place-order` workflow.
+- Tell another system when a line is allocated, moves batch or is released:
+  each change is POSTed, signed, to `STOCK_EVENTS_URL`. `receiver/` is a demo
+  receiver that shows them.
 
 State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 `swamp serve` restarts and machine restarts.
@@ -43,6 +46,8 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | `extensions/apps/stock/` | The `@puddleworks/stock` Swamp App. |
 | `webhook-routes/orders.yaml` | The `/hooks/orders` webhook: verified deliveries run `place-order`. |
 | `scripts/send_order.sh` | Plays the external system: signs and posts one order to the webhook. |
+| `extensions/behaviors/allocation/event_sender.ts` | Signs and posts allocation events to another system. |
+| `receiver/` | Demo receiver for those events: checks signatures, drops repeats, lists them on a page. Its own Box deployment. |
 | `scripts/concurrency_check.sh` | Races N allocation processes against one batch. |
 | `manifest.yaml` | Extension package: behavior, workflow and app. |
 | `docs/` | ADRs, chapter mapping, platform gaps, progress. |
@@ -149,10 +154,39 @@ The webhook needs no serve token: the signature is its credential, and its
 runs act as Swamp's built-in `service:webhook` principal, which may run
 workflows by default.
 
+## Events to other systems
+
+When `STOCK_EVENTS_URL` and `STOCK_EVENTS_SECRET` are set in serve's (or the
+CLI's) environment, every command that changes an allocation POSTs one JSON
+event per change after its writes:
+
+```json
+{"id": "<uuid>", "at": "<ISO time>", "type": "Allocated", "orderid": "o-1", "sku": "LAMP", "qty": 2, "batchref": "wh"}
+```
+
+- `Allocated`: a line was allocated, or moved to another batch by
+  `change_batch_quantity`.
+- `Deallocated`: a line was released, or a shrunk batch could not keep it and
+  no other batch had room; `batchref` is the batch it left.
+- A line that goes back into the batch it came from, and a repeat
+  allocation, send nothing.
+
+Each POST is signed as `X-Puddleworks-Signature: sha256=<hex HMAC-SHA256 of
+the raw body>`, like incoming orders. Sending is best effort: the command's
+writes stand if the receiver is down or refuses, and the failure is logged
+(`Could not send …`), not retried. There is no outbox, so a receiver that
+must not miss events should reconcile against the `allocation` data.
+
+`receiver/` is the other side for the demo: a Node server with no
+dependencies (`receiver/server.mjs`) that checks the signature with the same
+`STOCK_EVENTS_SECRET`, ignores an `id` it has seen, stores events in its data
+directory and lists them at `/`. Run it locally with
+`STOCK_EVENTS_SECRET=… PORT=8787 node receiver/server.mjs`.
+
 ## Tests
 
 ```sh
-~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard (32)
+~/.swamp/deno/deno test extensions/behaviors/allocation/   # domain, service, store guard, event sender (34)
 (cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (5)
 swamp workflow validate @puddleworks/place-order
 ./scripts/concurrency_check.sh 10                           # end to end race, against the real datastore

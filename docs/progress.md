@@ -35,6 +35,14 @@ Last updated: 2026-11-27.
       runs `place-order`; `scripts/send_order.sh` plays the sender. Checked
       under `swamp serve` with token sign-in and on the Box: a signed order is allocated, a bad
       signature gets 401, an out-of-stock order fails as a run.
+- [x] External events out (book ch. 11): signed `Allocated`/`Deallocated`
+      events to `STOCK_EVENTS_URL` from every command that changes an
+      allocation, and a demo receiver (`receiver/`). Checked with the CLI and
+      under `swamp serve` (token mode, a webhook order) against the receiver
+      in the orb: right events for allocate, move, return to the same batch
+      (none), release; a wrong secret and a receiver that is down are logged
+      and the command still succeeds; a replayed event is stored once; a
+      tampered body gets 401.
 - [x] Deployed to the Amp Box `mellens/cosmic-swamp` as `stock`
       (https://stock--mellens.onamp.dev/), running `swamp serve` with token
       sign-in. Checked from outside: sign-in page without a token; with it,
@@ -47,6 +55,7 @@ Last updated: 2026-11-27.
 | --- | --- | --- |
 | Domain | 19 | `deno test extensions/behaviors/allocation/domain_test.ts` |
 | Service | 10 | `deno test extensions/behaviors/allocation/service_test.ts` |
+| Event sender | 2 | `deno test extensions/behaviors/allocation/event_sender_test.ts` |
 | Swamp store guard | 3 | `deno test extensions/behaviors/allocation/swamp_store_test.ts` |
 | App logic | 5 | `bun test` in `extensions/apps/stock` |
 | E2E race | 1 script | `scripts/concurrency_check.sh 10` |
@@ -56,8 +65,6 @@ Last updated: 2026-11-27.
 - Registry publication (`swamp extension push`). Not done; it is a public,
   external action that needs a decision.
 - Per-SKU sharding (ADR 0004) if throughput matters.
-- External events out (book ch. 11), for example "allocated" to another
-  system. Needs a method that calls it, since Swamp has no outbound stream.
 
 ## Swamp limitations discovered
 
