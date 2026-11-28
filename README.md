@@ -57,6 +57,7 @@ State lives in the Swamp datastore (`.swamp/`), so it survives CLI runs,
 | `workflows/workflow-af03ada5-….yaml` | `@puddleworks/dispatch-events`: runs `dispatch` every minute on serve's scheduler. |
 | `receiver/` | Demo receiver for those events: checks signatures, drops repeats, lists them on a page. Its own Box deployment. |
 | `scripts/concurrency_check.sh` | End-to-end races: allocate vs allocate, and change_batch_quantity vs allocate. Fails on a broken invariant. |
+| `scripts/webhook_check.sh` | End to end over the webhook: signed orders in through `swamp serve`, allocations and events checked in the datastore. |
 | `manifest.yaml` | Extension package: behaviors, workflows and app. |
 | `docs/` | ADRs, chapter mapping, platform gaps, progress. |
 
@@ -205,7 +206,15 @@ directory and lists them at `/`. Run it locally with
 (cd extensions/apps/stock && bun test && bunx tsc --noEmit)  # app view logic (6)
 swamp workflow validate @puddleworks/place-order
 ./scripts/concurrency_check.sh 10                           # end to end races, against the real datastore
+./scripts/webhook_check.sh                                  # end to end over the webhook: starts its own swamp serve
 ```
+
+`webhook_check.sh` starts `swamp serve` on a free loopback port, sends
+signed orders with `send_order.sh` and checks what was saved: an order with
+stock gets an `allocation` naming its batch and an `Allocated` event, an
+order for a SKU with no stock is unallocated with an `OutOfStock` event, and
+a wrong signature gets 401 and records nothing. It reads the secret from the
+`default` vault, so run `.agents/setup` first.
 
 ## Install the package elsewhere
 

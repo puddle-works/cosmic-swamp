@@ -69,6 +69,7 @@ Last updated: 2026-11-27.
 | Swamp store guard | 3 | `deno test extensions/behaviors/allocation/swamp_store_test.ts` |
 | App logic | 6 | `bun test` in `extensions/apps/stock` |
 | E2E races (2) | 1 script | `scripts/concurrency_check.sh 10` |
+| E2E webhook (3 orders, 8 checks) | 1 script | `scripts/webhook_check.sh` |
 
 ## Outstanding
 
